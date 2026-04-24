@@ -1,0 +1,228 @@
+@page
+@model DataBridge.Pages.ImportModel
+@{
+    ViewData["Title"] = "Excel → SQL Import";
+}
+
+<div class="page-header">
+    <a href="/" class="back-link">← Home</a>
+    <h2>⬆ Excel → SQL Import</h2>
+    <p>Upload Excel files and import them into a SQL Server table.</p>
+</div>
+
+<div class="form-card">
+    <form id="importForm" enctype="multipart/form-data">
+        @Html.AntiForgeryToken()
+
+        <div class="form-section">
+            <h4>Database Connection</h4>
+            <div class="form-group">
+                <label>Connection String</label>
+                <input type="password" id="connStr" name="connStr" class="form-control"
+                       placeholder="mssql+pyodbc://user:pass@server/db?driver=..."
+                       autocomplete="off" />
+                <small>Your password is never stored or logged.</small>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" onclick="testConnection()">
+                Test Connection
+            </button>
+            <span id="connStatus"></span>
+        </div>
+
+        <div class="form-section">
+            <h4>Target Table</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Schema</label>
+                    <input type="text" id="schema" class="form-control" value="dbo" />
+                </div>
+                <div class="form-group">
+                    <label>Table Name</label>
+                    <input type="text" id="tableName" class="form-control"
+                           placeholder="my_table" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="replaceTable" checked />
+                    Drop and recreate table before importing
+                    <small>(unchecked = append rows)</small>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h4>Excel Files</h4>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-icon">📂</div>
+                <p>Drag & drop .xlsx files here, or click to browse</p>
+                <input type="file" id="fileInput" multiple accept=".xlsx,.xls"
+                       onchange="handleFiles(this.files)" style="display:none" />
+                <button type="button" class="btn btn-sm btn-outline"
+                        onclick="document.getElementById('fileInput').click()">
+                    Browse Files
+                </button>
+            </div>
+            <div id="fileList" class="file-list"></div>
+        </div>
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" onclick="startImport()" id="importBtn">
+                Start Import
+            </button>
+            <button type="button" class="btn btn-danger" onclick="cancelJob()"
+                    id="cancelBtn" style="display:none">
+                Cancel
+            </button>
+        </div>
+    </form>
+</div>
+
+<div id="progressSection" class="progress-section" style="display:none">
+    <h4>Progress</h4>
+    <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div id="progressStatus" class="progress-status"></div>
+    <div id="progressLog"    class="progress-log"></div>
+</div>
+
+@section Scripts {
+<script>
+    let connection   = null;
+    let currentJobId = null;
+    let selectedFiles = new DataTransfer();
+
+    // Drag & drop
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    function handleFiles(files) {
+        for (const f of files) {
+            if (!f.name.match(/\.xlsx?$/i)) continue;
+            selectedFiles.items.add(f);
+        }
+        renderFileList();
+    }
+
+    function removeFile(index) {
+        const dt = new DataTransfer();
+        const items = [...selectedFiles.files];
+        items.forEach((f, i) => { if (i !== index) dt.items.add(f); });
+        selectedFiles = dt;
+        renderFileList();
+    }
+
+    function renderFileList() {
+        const list = document.getElementById('fileList');
+        list.innerHTML = '';
+        [...selectedFiles.files].forEach((f, i) => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `<span>📄 ${f.name}</span>
+                              <span class="file-size">${(f.size/1024/1024).toFixed(1)} MB</span>
+                              <button type="button" onclick="removeFile(${i})">✕</button>`;
+            list.appendChild(item);
+        });
+    }
+
+    async function testConnection() {
+        debugger;
+        const cs = document.getElementById('connStr').value;
+        if (!cs) { alert('Enter a connection string first.'); return; }
+        const el = document.getElementById('connStatus');
+        el.textContent = 'Testing…'; el.className = 'status-testing';
+        const res = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ connectionString: cs })
+        });
+        const data = await res.json();
+        el.textContent = data.success ? '✓ Connected' : '✗ ' + data.message;
+        el.className   = data.success ? 'status-ok' : 'status-error';
+    }
+
+    async function startImport() {
+        const cs        = document.getElementById('connStr').value;
+        const tableName = document.getElementById('tableName').value;
+        const schema    = document.getElementById('schema').value;
+        const replace   = document.getElementById('replaceTable').checked;
+
+        if (!cs || !tableName || selectedFiles.files.length === 0) {
+            alert('Please fill in Connection String, Table Name, and select at least one file.');
+            return;
+        }
+
+        currentJobId = crypto.randomUUID();
+        await setupSignalR(currentJobId);
+
+        document.getElementById('progressSection').style.display = '';
+        document.getElementById('progressLog').innerHTML         = '';
+        document.getElementById('importBtn').style.display       = 'none';
+        document.getElementById('cancelBtn').style.display       = '';
+        setProgress(0, 'Starting…');
+
+        const formData = new FormData();
+        formData.append('jobId',             currentJobId);
+        formData.append('connectionString',  cs);
+        formData.append('tableName',         tableName);
+        formData.append('schemaName',        schema);
+        formData.append('replaceTable',      replace);
+        formData.append('__RequestVerificationToken',
+            document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+        for (const f of selectedFiles.files)
+            formData.append('files', f);
+
+        await fetch('/Import?handler=Run', { method: 'POST', body: formData });
+    }
+
+    async function cancelJob() {
+        if (!currentJobId) return;
+        await fetch('/Import?handler=Cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json',
+                       'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value },
+            body: JSON.stringify({ jobId: currentJobId })
+        });
+    }
+
+    async function setupSignalR(jobId) {
+        if (connection) await connection.stop();
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl('/progressHub').withAutomaticReconnect().build();
+
+        connection.on('progress', (msg) => {
+            setProgress(msg.percent, msg.message);
+            appendLog(msg.message, msg.isError);
+            if (msg.isComplete || msg.isError) {
+                document.getElementById('importBtn').style.display = '';
+                document.getElementById('cancelBtn').style.display = 'none';
+            }
+        });
+
+        await connection.start();
+        await connection.invoke('JoinJob', jobId);
+    }
+
+    function setProgress(pct, label) {
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressStatus').textContent = label;
+    }
+
+    function appendLog(msg, isError) {
+        const log  = document.getElementById('progressLog');
+        const line = document.createElement('div');
+        line.className   = isError ? 'log-error' : 'log-line';
+        line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+</script>
+}

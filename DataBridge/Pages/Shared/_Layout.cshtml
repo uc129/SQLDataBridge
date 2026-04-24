@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] – DataBridge</title>
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="nav-brand">⇄ DataBridge</a>
+        <div class="nav-links">
+            <a href="/Export">⬇ Export</a>
+            <a href="/Import">⬆ Import</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        @RenderBody()
+    </main>
+
+    <footer class="footer">
+        DataBridge — Excel ⇄ SQL Server
+    </footer>
+
+    <script src="~/lib/signalr/signalr.min.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

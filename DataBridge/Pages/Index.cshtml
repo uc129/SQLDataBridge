@@ -1,0 +1,34 @@
+@page
+@model DataBridge.Pages.IndexModel
+@{
+    ViewData["Title"] = "DataBridge";
+}
+
+<div class="hero">
+    <div class="hero-icon">⇄</div>
+    <h1>DataBridge</h1>
+    <p>Move data between Excel and SQL Server — fast, reliable, and auditable.</p>
+    <div class="hero-actions">
+        <a href="/Export" class="btn btn-primary">
+            <span>⬇</span> SQL → Excel Export
+        </a>
+        <a href="/Import" class="btn btn-secondary">
+            <span>⬆</span> Excel → SQL Import
+        </a>
+    </div>
+</div>
+
+<div class="cards">
+    <div class="card">
+        <div class="card-icon">⬇</div>
+        <h3>SQL → Excel Export</h3>
+        <p>Export any SQL view or custom query to Excel. Automatically splits files at 1 million rows to stay within Excel's limits. Real-time progress tracking.</p>
+        <a href="/Export" class="btn btn-sm">Open Export →</a>
+    </div>
+    <div class="card">
+        <div class="card-icon">⬆</div>
+        <h3>Excel → SQL Import</h3>
+        <p>Upload multiple Excel files into a SQL table. Auto-detects schema across all files, handles mismatched columns, and stores everything as NVARCHAR.</p>
+        <a href="/Import" class="btn btn-sm">Open Import →</a>
+    </div>
+</div>
