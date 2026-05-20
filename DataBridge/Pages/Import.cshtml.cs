@@ -6,15 +6,17 @@ using System.Collections.Concurrent;
 
 namespace DataBridge.Pages;
 
-public class ImportModel(ExcelImportService importService) : PageModel
+public class ImportModel(ExcelImportService importService, IConfiguration config) : PageModel
 {
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _jobs = new();
+
+    private static readonly HashSet<string> _allowedTables = new(StringComparer.OrdinalIgnoreCase)
+        { "FNATool_DataBridge1", "FNATool_DataBridge2", "FNATool_DataBridge3" };
 
     public void OnGet() { }
 
     public async Task<IActionResult> OnPostRunAsync(
         [FromForm] string jobId,
-        [FromForm] string connectionString,
         [FromForm] string tableName,
         [FromForm] string schemaName,
         [FromForm] bool replaceTable,
@@ -23,18 +25,24 @@ public class ImportModel(ExcelImportService importService) : PageModel
         if (string.IsNullOrWhiteSpace(jobId) || files.Count == 0)
             return BadRequest("Missing jobId or files.");
 
+        if (!_allowedTables.Contains(tableName))
+            return BadRequest("Invalid table name.");
+
+        var cs = config.GetConnectionString("Default");
+        if (string.IsNullOrWhiteSpace(cs))
+            return BadRequest("Connection string is not configured. Set ConnectionStrings:Default in appsettings.json.");
+
         var cts = new CancellationTokenSource();
         _jobs[jobId] = cts;
 
         var req = new ImportRequest
         {
-            ConnectionString = connectionString,
-            TableName = tableName,
-            SchemaName = schemaName,
-            ReplaceTable = replaceTable,
+            ConnectionString = cs,
+            TableName        = tableName,
+            SchemaName       = schemaName ?? "dbo",
+            ReplaceTable     = replaceTable,
         };
 
-        // Snapshot file streams before the request ends
         var fileSnapshots = new List<(string FileName, Stream Stream)>();
         foreach (var f in files)
         {
@@ -60,4 +68,3 @@ public class ImportModel(ExcelImportService importService) : PageModel
         return new OkResult();
     }
 }
-

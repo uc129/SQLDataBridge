@@ -1,3 +1,4 @@
+using Dapper;
 using DataBridge.Hubs;
 using DataBridge.Models;
 using ExcelDataReader;
@@ -16,7 +17,6 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
         ImportRequest req, List<(string FileName, Stream Stream)> files,
         string jobId, CancellationToken ct)
     {
-        // Required for ExcelDataReader on non-Windows or non-full .NET
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         var sw     = Stopwatch.StartNew();
@@ -30,7 +30,6 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
 
             var allColumns = new List<string>();
             var seenCols   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             var fileSnapshots = new List<(string FileName, byte[] Data)>();
 
             foreach (var (fileName, stream) in files)
@@ -40,15 +39,12 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
 
                 using var ms     = new MemoryStream(data);
                 using var reader = ExcelReaderFactory.CreateReader(ms);
-                var ds           = reader.AsDataSet(new ExcelDataSetConfiguration
+                var ds = reader.AsDataSet(new ExcelDataSetConfiguration
                 {
                     ConfigureDataTable = _ => new ExcelDataTableConfiguration
                     {
-                        UseHeaderRow = true,
-                        ReadHeaderRow = rowReader =>
-                        {
-                            // Only read the first row to get headers
-                        }
+                        UseHeaderRow  = true,
+                        ReadHeaderRow = _ => { }
                     },
                     UseColumnDataType = false
                 });
@@ -61,14 +57,14 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
                         if (!string.IsNullOrWhiteSpace(safe) && seenCols.Add(safe))
                             allColumns.Add(safe);
                     }
-                    break; // first sheet only
+                    break;
                 }
             }
 
             await SendProgress(jobId, "Scanning",
                 $"Found {allColumns.Count} unique columns across {fileSnapshots.Count} file(s)", 5);
 
-            // ── Step 2: Drop & recreate table if requested ──────────
+            // ── Step 2: Drop & recreate or extend table ─────────────
             await using var conn = new SqlConnection(req.ConnectionString);
             await conn.OpenAsync(ct);
 
@@ -77,12 +73,11 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
             if (req.ReplaceTable)
             {
                 await SendProgress(jobId, "Setup", $"Recreating table {qualifiedTable}…", 8);
-                await DropAndCreateTable(conn, req.SchemaName, req.TableName, allColumns, ct);
+                await DropAndCreateTableAsync(conn, req.SchemaName, req.TableName, allColumns, ct);
             }
             else
             {
-                // Ensure any new columns are added
-                await EnsureColumnsExist(conn, req.SchemaName, req.TableName, allColumns, ct);
+                await EnsureColumnsExistAsync(conn, req.SchemaName, req.TableName, allColumns, ct);
             }
 
             // ── Step 3: Import each file ────────────────────────────
@@ -98,11 +93,11 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
 
                 using var ms     = new MemoryStream(data);
                 using var reader = ExcelReaderFactory.CreateReader(ms);
-                var ds           = reader.AsDataSet(new ExcelDataSetConfiguration
+                var ds = reader.AsDataSet(new ExcelDataSetConfiguration
                 {
                     ConfigureDataTable = _ => new ExcelDataTableConfiguration
                     {
-                        UseHeaderRow      = true,
+                        UseHeaderRow          = true,
                         EmptyColumnNamePrefix = "col_"
                     },
                     UseColumnDataType = false
@@ -111,21 +106,18 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
                 var table = ds.Tables[0];
                 if (table.Rows.Count == 0)
                 {
-                    await SendProgress(jobId, "Importing",
-                        $"  ⚠ {fileName} is empty, skipping.", 0);
+                    await SendProgress(jobId, "Importing", $"  ⚠ {fileName} is empty, skipping.", 0);
                     continue;
                 }
 
-                // Map file columns to safe names
                 var colMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (DataColumn col in table.Columns)
                     colMap[col.ColumnName] = SafeColumnName(col.ColumnName);
 
-                // Bulk insert using SqlBulkCopy with remapped DataTable
                 var mapped = RemapTable(table, colMap, allColumns);
                 long rows  = await BulkInsertAsync(conn, qualifiedTable, mapped, fileName, jobId, ct);
 
-                totalWritten      += rows;
+                totalWritten += rows;
                 result.FilesCreated++;
 
                 await SendProgress(jobId, "Importing",
@@ -139,10 +131,9 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
             result.RowsTotal   = totalWritten;
             result.ElapsedTime = $"{(int)sw.Elapsed.TotalMinutes}m {sw.Elapsed.Seconds}s";
             result.Message     = $"Imported {totalWritten:N0} rows from {result.FilesCreated} file(s) " +
-                                 $"into [{req.SchemaName}].[{req.TableName}] in {result.ElapsedTime}.";
+                                 $"into {qualifiedTable} in {result.ElapsedTime}.";
 
-            await SendProgress(jobId, "Done", result.Message, 100,
-                totalWritten, isComplete: true);
+            await SendProgress(jobId, "Done", result.Message, 100, totalWritten, isComplete: true);
         }
         catch (OperationCanceledException)
         {
@@ -175,7 +166,7 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
         return safe;
     }
 
-    private static async Task DropAndCreateTable(
+    private static async Task DropAndCreateTableAsync(
         SqlConnection conn, string schema, string table,
         List<string> columns, CancellationToken ct)
     {
@@ -183,33 +174,26 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
         var colDef = string.Join(",\n  ", columns.Select(c => $"[{c}] NVARCHAR(MAX)"));
         var create = $"CREATE TABLE [{schema}].[{table}] (\n  {colDef}\n)";
 
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = drop;
-        await cmd.ExecuteNonQueryAsync(ct);
-        cmd.CommandText = create;
-        await cmd.ExecuteNonQueryAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(drop,   cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(create, cancellationToken: ct));
     }
 
-    private static async Task EnsureColumnsExist(
+    private static async Task EnsureColumnsExistAsync(
         SqlConnection conn, string schema, string table,
         List<string> columns, CancellationToken ct)
     {
-        // Get existing columns
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
-            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'";
-
-        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        while (await r.ReadAsync(ct)) existing.Add(r.GetString(0));
-        await r.CloseAsync();
+        var existing = new HashSet<string>(
+            await conn.QueryAsync<string>(new CommandDefinition(
+                @"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table",
+                new { schema, table },
+                cancellationToken: ct)),
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var col in columns.Where(c => !existing.Contains(c)))
-        {
-            cmd.CommandText = $"ALTER TABLE [{schema}].[{table}] ADD [{col}] NVARCHAR(MAX)";
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
+            await conn.ExecuteAsync(new CommandDefinition(
+                $"ALTER TABLE [{schema}].[{table}] ADD [{col}] NVARCHAR(MAX)",
+                cancellationToken: ct));
     }
 
     private static DataTable RemapTable(
@@ -251,7 +235,6 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
             NotifyAfter          = 5_000,
         };
 
-        // Map each column by name
         foreach (DataColumn col in table.Columns)
             bulk.ColumnMappings.Add(col.ColumnName, col.ColumnName);
 

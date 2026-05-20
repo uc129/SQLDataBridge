@@ -3,7 +3,7 @@ namespace DataBridge.Models;
 public class ExportRequest
 {
     public string ConnectionString { get; set; } = string.Empty;
-    public string QueryOrView      { get; set; } = string.Empty;  // view name or full SQL
+    public string QueryOrView      { get; set; } = string.Empty;
     public bool   IsRawQuery       { get; set; } = false;
     public string OutputFolder     { get; set; } = string.Empty;
     public string FilePrefix       { get; set; } = "export";
@@ -18,6 +18,31 @@ public class ImportRequest
     public string SchemaName       { get; set; } = "dbo";
     public bool   ReplaceTable     { get; set; } = true;
     public List<IFormFile> Files   { get; set; } = new();
+}
+
+public class CleanRequest
+{
+    public string TableName       { get; set; } = string.Empty;
+    public string JobId           { get; set; } = string.Empty;
+    public int[]  PoLeadingDigits { get; set; } = [7, 8, 3];
+    // Keys: vendor, invoiceDescription, purchasingDocument, documentHeader, assignment, processed, lineItemType
+    public Dictionary<string, string?>? ColumnMap { get; set; }
+}
+
+public class TableMetrics
+{
+    public string TableName      { get; set; } = string.Empty;
+    public bool   Exists         { get; set; }
+    public long   RowCount       { get; set; }
+    public long?  VendorNotFound { get; set; }
+    public long?  PoNotFound     { get; set; }
+}
+
+public class DashboardMetrics
+{
+    public List<TableMetrics> Tables      { get; set; } = new();
+    public long               ViewRowCount { get; set; }
+    public string             ViewName    { get; set; } = string.Empty;
 }
 
 public class ProgressMessage

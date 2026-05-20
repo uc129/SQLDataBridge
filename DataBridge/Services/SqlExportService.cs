@@ -15,8 +15,8 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
 
     public async Task<JobResult> ExportAsync(ExportRequest req, string jobId, CancellationToken ct)
     {
-        var sw      = Stopwatch.StartNew();
-        var result  = new JobResult();
+        var sw     = Stopwatch.StartNew();
+        var result = new JobResult();
 
         try
         {
@@ -29,12 +29,10 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
             // ── Count rows ──────────────────────────────────────────
             await SendProgress(jobId, "Counting", "Counting rows…", 0);
 
-            long totalRows;
-            await using (var countConn = new SqlConnection(req.ConnectionString))
-            {
-                totalRows = await countConn.ExecuteScalarAsync<long>(
-                    $"SELECT COUNT(*) FROM ({sql}) AS _cq");
-            }
+            await using var countConn = new SqlConnection(req.ConnectionString);
+            long totalRows = await countConn.ExecuteScalarAsync<long>(
+                new CommandDefinition($"SELECT COUNT(*) FROM ({sql}) AS _cq",
+                    commandTimeout: 0, cancellationToken: ct));
 
             result.RowsTotal = totalRows;
             int totalParts   = (int)Math.Ceiling((double)totalRows / req.MaxRowsPerFile);
@@ -46,22 +44,18 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
             await using var conn = new SqlConnection(req.ConnectionString);
             await conn.OpenAsync(ct);
 
-            await using var cmd = new SqlCommand(sql, conn)
-            {
-                CommandTimeout = 0  // large exports can take time
-            };
+            await using var reader = (SqlDataReader)await conn.ExecuteReaderAsync(
+                new CommandDefinition(sql, commandTimeout: 0, cancellationToken: ct),
+                CommandBehavior.SequentialAccess);
 
-            await using var reader = await cmd.ExecuteReaderAsync(
-                CommandBehavior.SequentialAccess, ct);
+            var columns   = Enumerable.Range(0, reader.FieldCount)
+                                      .Select(i => reader.GetName(i))
+                                      .ToList();
 
-            var columns    = Enumerable.Range(0, reader.FieldCount)
-                                       .Select(i => reader.GetName(i))
-                                       .ToList();
-
-            var buffer       = new List<object?[]>();
-            long fetched     = 0;
-            int  part        = 1;
-            int  rowsInPart  = 0;
+            var buffer      = new List<object?[]>();
+            long fetched    = 0;
+            int  part       = 1;
+            int  rowsInPart = 0;
 
             while (await reader.ReadAsync(ct))
             {
@@ -69,7 +63,6 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
 
                 var row = new object?[reader.FieldCount];
                 reader.GetValues(row!);
-                // Convert DBNull to null
                 for (int i = 0; i < row.Length; i++)
                     if (row[i] is DBNull) row[i] = null;
 
@@ -77,7 +70,6 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
                 fetched++;
                 rowsInPart++;
 
-                // Progress update every 10k rows
                 if (fetched % 10_000 == 0)
                 {
                     int pct = (int)(fetched * 90.0 / totalRows) + 2;
@@ -87,7 +79,7 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
 
                 if (rowsInPart >= req.MaxRowsPerFile)
                 {
-                    var filepath = WritePartFile(buffer, columns, req, part, totalParts, jobId);
+                    var filepath = WritePartFile(buffer, columns, req, part, totalParts);
                     result.OutputFiles.Add(filepath);
                     result.FilesCreated++;
                     part++;
@@ -100,10 +92,9 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
                 }
             }
 
-            // Flush remainder
             if (buffer.Count > 0)
             {
-                var filepath = WritePartFile(buffer, columns, req, part, totalParts, jobId);
+                var filepath = WritePartFile(buffer, columns, req, part, totalParts);
                 result.OutputFiles.Add(filepath);
                 result.FilesCreated++;
             }
@@ -131,7 +122,7 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
 
     private static string WritePartFile(
         List<object?[]> buffer, List<string> columns,
-        ExportRequest req, int part, int totalParts, string jobId)
+        ExportRequest req, int part, int totalParts)
     {
         var filename = totalParts == 1
             ? $"{req.FilePrefix}.xlsx"
@@ -141,18 +132,16 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
         using var wb = new XLWorkbook();
         var ws = wb.AddWorksheet(req.SheetName);
 
-        // Header
         for (int c = 0; c < columns.Count; c++)
         {
             var cell = ws.Cell(1, c + 1);
             cell.Value = columns[c];
-            cell.Style.Font.Bold      = true;
-            cell.Style.Font.FontColor = XLColor.White;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1F4E79");
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            cell.Style.Font.Bold                = true;
+            cell.Style.Font.FontColor           = XLColor.White;
+            cell.Style.Fill.BackgroundColor     = XLColor.FromHtml("#1F4E79");
+            cell.Style.Alignment.Horizontal     = XLAlignmentHorizontalValues.Center;
         }
 
-        // Data rows
         for (int r = 0; r < buffer.Count; r++)
         {
             for (int c = 0; c < buffer[r].Length; c++)
@@ -162,15 +151,11 @@ public class SqlExportService(IHubContext<ProgressHub> hub, IConfiguration confi
                     ws.Cell(r + 2, c + 1).SetValue(val.ToString());
             }
 
-            // Alternate row shading
             if (r % 2 == 0)
                 ws.Row(r + 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#EBF3FB");
         }
 
-        // Auto-fit columns (sample first 200 rows for speed)
         ws.Columns().AdjustToContents(1, Math.Min(201, buffer.Count + 1));
-
-        // Freeze + filter
         ws.SheetView.FreezeRows(1);
         ws.RangeUsed()!.SetAutoFilter();
 

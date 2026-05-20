@@ -1,0 +1,972 @@
+@page
+@model DataBridge.Pages.CleanModel
+@{
+    ViewData["Title"] = "Pipeline";
+    ViewData["ActivePage"] = "pipeline";
+}
+
+@* ── Topbar ───────────────────────────────────────────────────── *@
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Pipeline</h1>
+    <div class="sub">Import → Clean → Export, end-to-end.</div>
+  </div>
+  <div class="topbar-right">
+    <span class="conn-pill is-unknown" id="connPill">
+      <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
+      <span id="connPillText">Not tested</span>
+    </span>
+    <button class="tb-icon-btn" title="Notifications">
+      <svg width="18" height="18"><use href="#ic-bell"/></svg>
+    </button>
+    <div class="tb-avatar">UC</div>
+  </div>
+</div>
+
+@* ── Page content ─────────────────────────────────────────────── *@
+<div class="page">
+
+  @* Page header *@
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Pipeline</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#2E75B6">
+          <svg width="20" height="20"><use href="#ic-pipeline"/></svg>
+        </div>
+        Pipeline
+      </h1>
+      <p class="page-sub">Import your Excel data, clean it, then export — without switching tools.</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-secondary" onclick="resetPipeline()">
+        <svg width="14" height="14"><use href="#ic-refresh"/></svg> Reset
+      </button>
+      <button class="btn btn-primary" onclick="goStep(1)">
+        <svg width="14" height="14"><use href="#ic-plus"/></svg> New Run
+      </button>
+    </div>
+  </div>
+
+  @* ── Stepper ─────────────────────────────────────────────────── *@
+  <div class="stepper" id="stepper">
+    <div class="step active is-clickable" data-step="1" onclick="goStep(1)">
+      <div class="step-dot" id="dot-1">1</div>
+      <div>
+        <div class="step-label-top">Step 1</div>
+        <div class="step-label">Import</div>
+      </div>
+    </div>
+    <div class="step-arrow" id="arrow-1"></div>
+    <div class="step" data-step="2" onclick="goStep(2)">
+      <div class="step-dot" id="dot-2">2</div>
+      <div>
+        <div class="step-label-top">Step 2</div>
+        <div class="step-label">Clean</div>
+      </div>
+    </div>
+    <div class="step-arrow" id="arrow-2"></div>
+    <div class="step" data-step="3" onclick="goStep(3)">
+      <div class="step-dot" id="dot-3">3</div>
+      <div>
+        <div class="step-label-top">Step 3</div>
+        <div class="step-label">Export</div>
+      </div>
+    </div>
+  </div>
+
+  @* ── Two-column layout ───────────────────────────────────────── *@
+  <div class="two-col">
+
+    @* ── LEFT: step panels ─────────────────────────────── *@
+    <div>
+
+      @* ══ STEP 1: Import ══════════════════════════════════════════ *@
+      <div class="card card-pad step-panel" id="panel-1">
+        <div class="card-head">
+          <div>
+            <div class="card-head-step">Step 1 of 3</div>
+            <h3>
+              <span style="width:26px;height:26px;border-radius:6px;background:var(--blue-100);color:var(--blue-500);display:grid;place-items:center">
+                <svg width="14" height="14"><use href="#ic-upload"/></svg>
+              </span>
+              Import
+            </h3>
+            <div class="sub">Pick a SQL target and drop the Excel files you want to stage.</div>
+          </div>
+        </div>
+
+        @Html.AntiForgeryToken()
+
+        @* Connection string *@
+        <div class="field">
+          <label class="label">Connection string</label>
+          <div class="conn-wrap">
+            <input class="input mono" id="connString" type="password"
+                   placeholder="Server=...;Database=...;User ID=...;Password=..."
+                   autocomplete="off" />
+            <button class="btn btn-secondary btn-sm test-inline" onclick="testConnection()" id="testBtn">
+              Test Connection
+            </button>
+          </div>
+          <div id="connHelper" class="helper">Enter your SQL Server connection string above.</div>
+        </div>
+
+        @* File drop zone *@
+        <div class="field">
+          <label class="label">Source files <span style="font-weight:400;color:var(--text-muted)">(optional — skip if data is already staged)</span></label>
+          <div class="dropzone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <div class="dropzone-icon">
+              <svg width="20" height="20"><use href="#ic-upload"/></svg>
+            </div>
+            <div><strong>Drag &amp; drop .xlsx / .xls files here</strong></div>
+            <div class="hint">or click to browse · multi-file supported · 500 MB cap</div>
+          </div>
+          <div class="dropzone is-filled" id="filesFilled" style="display:none">
+            <div id="fileList"></div>
+            <button class="btn btn-ghost btn-sm mt-12" style="width:100%"
+                    onclick="document.getElementById('fileInput').click()">
+              <svg width="13" height="13"><use href="#ic-plus"/></svg> Add more files
+            </button>
+          </div>
+          <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display:none"
+                 onchange="handleFiles(this.files)" />
+        </div>
+
+        @* Table + load mode *@
+        <div class="field-row cols-2">
+          <div class="field">
+            <label class="label">Target table</label>
+            <div style="position:relative">
+              <select class="select" id="tableName" style="appearance:none;padding-right:32px" onchange="onTableChange()">
+                <option value="FNATool_DataBridge1">FNATool_DataBridge1</option>
+                <option value="FNATool_DataBridge2">FNATool_DataBridge2</option>
+                <option value="FNATool_DataBridge3">FNATool_DataBridge3</option>
+              </select>
+              <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none">
+                <use href="#ic-chevron-d"/>
+              </svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label">Load mode</label>
+            <div class="toggle-group full">
+              <div class="toggle-opt active" id="modeDropBtn" onclick="setLoadMode('drop')">Drop &amp; Recreate</div>
+              <div class="toggle-opt" id="modeAppendBtn" onclick="setLoadMode('append')">Append</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row-between mt-16">
+          <span class="text-sm muted">Schema auto-merges across files · NVARCHAR(MAX)</span>
+          <button class="btn btn-primary" onclick="completeStep1()">
+            Next: Clean <svg width="14" height="14"><use href="#ic-arrow-r"/></svg>
+          </button>
+        </div>
+      </div>
+
+      @* ══ STEP 2: Clean ═══════════════════════════════════════════ *@
+      <div class="card card-pad step-panel" id="panel-2" style="display:none">
+        <div class="card-head">
+          <div>
+            <div class="card-head-step">Step 2 of 3</div>
+            <h3>
+              <span style="width:26px;height:26px;border-radius:6px;background:#E8EBF8;color:#5B6CCB;display:grid;place-items:center">
+                <svg width="14" height="14"><use href="#ic-edit"/></svg>
+              </span>
+              Clean
+            </h3>
+            <div class="sub">Extract vendor codes and PO numbers using pattern rules.</div>
+          </div>
+          <span class="badge badge-info" id="cleanRowBadge" style="display:none">
+            <span class="badge-dot"></span> <span id="cleanRowCount">—</span> rows staged
+          </span>
+        </div>
+
+        @* Column mapping (loaded dynamically) *@
+        <div class="field" id="chipsField">
+          <label class="label">Auto-detected columns</label>
+          <div class="chips" id="chipsContainer">
+            <span class="text-sm muted">Loading table info…</span>
+          </div>
+          <div class="helper">Click × to exclude a column · changes don't affect source data</div>
+        </div>
+
+        <div class="field-row cols-2">
+          <div class="field">
+            <label class="label">Vendor Code column</label>
+            <div style="position:relative">
+              <select class="select" id="mapVendor" style="appearance:none;padding-right:32px">
+                <option value="">— not mapped —</option>
+              </select>
+              <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none"><use href="#ic-chevron-d"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label">PO Number column</label>
+            <div style="position:relative">
+              <select class="select" id="mapPO" style="appearance:none;padding-right:32px">
+                <option value="">— not mapped —</option>
+              </select>
+              <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none"><use href="#ic-chevron-d"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row cols-2">
+          <div class="field">
+            <label class="label">Description column <span style="font-weight:400;color:var(--text-muted)">(vendor lookup)</span></label>
+            <div style="position:relative">
+              <select class="select" id="mapInvDesc" style="appearance:none;padding-right:32px">
+                <option value="">— not mapped —</option>
+              </select>
+              <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none"><use href="#ic-chevron-d"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label">Status column</label>
+            <div style="position:relative">
+              <select class="select" id="mapProcessed" style="appearance:none;padding-right:32px">
+                <option value="">— not mapped —</option>
+              </select>
+              <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none"><use href="#ic-chevron-d"/></svg>
+            </div>
+          </div>
+        </div>
+
+        @* PO digit patterns *@
+        <div class="field">
+          <label class="label">PO leading digits <span style="font-weight:400;color:var(--text-muted)">— 10-digit POs starting with…</span></label>
+          <div class="po-checks" id="poChecks">
+            <label class="po-check-label checked" data-digit="7"><input type="checkbox" value="7" checked/>7 <span style="font-size:11px;opacity:.7">(standard)</span></label>
+            <label class="po-check-label checked" data-digit="8"><input type="checkbox" value="8" checked/>8 <span style="font-size:11px;opacity:.7">(standard)</span></label>
+            <label class="po-check-label checked" data-digit="3"><input type="checkbox" value="3" checked/>3</label>
+            <label class="po-check-label" data-digit="4"><input type="checkbox" value="4"/>4</label>
+            <label class="po-check-label" data-digit="5"><input type="checkbox" value="5"/>5</label>
+            <label class="po-check-label" data-digit="6"><input type="checkbox" value="6"/>6</label>
+          </div>
+        </div>
+
+        @* Dry run *@
+        <div class="switch-row">
+          <div>
+            <div class="sw-label">Dry run</div>
+            <div class="sw-hint">Apply transforms in-memory but don't write back to staging.</div>
+          </div>
+          <div class="switch on" id="drySwitch" onclick="toggleDryRun()"></div>
+        </div>
+
+        <div class="row-between mt-16">
+          <button class="btn btn-ghost" onclick="goStep(1)">
+            <svg width="14" height="14"><use href="#ic-arrow-l"/></svg> Back
+          </button>
+          <button class="btn btn-primary" onclick="completeStep2()">
+            Next: Export <svg width="14" height="14"><use href="#ic-arrow-r"/></svg>
+          </button>
+        </div>
+      </div>
+
+      @* ══ STEP 3: Export ══════════════════════════════════════════ *@
+      <div class="card card-pad step-panel" id="panel-3" style="display:none">
+        <div class="card-head">
+          <div>
+            <div class="card-head-step">Step 3 of 3</div>
+            <h3>
+              <span style="width:26px;height:26px;border-radius:6px;background:var(--teal-50);color:var(--teal-500);display:grid;place-items:center">
+                <svg width="14" height="14"><use href="#ic-download"/></svg>
+              </span>
+              Export
+            </h3>
+            <div class="sub">Write cleaned rows out to Excel. Files auto-split at the row cap.</div>
+          </div>
+          <span class="badge badge-info" id="exportRowBadge" style="display:none">
+            <span class="badge-dot"></span> ready to export
+          </span>
+        </div>
+
+        <div class="field">
+          <label class="label">Output folder</label>
+          <div class="input-row">
+            <input class="input mono" id="outputFolder" placeholder="C:\DataBridge\Output\" />
+            <button class="btn btn-secondary" onclick="alert('Browse not available in browser — type path manually.')">
+              <svg width="14" height="14"><use href="#ic-folder"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="field-row cols-2">
+          <div class="field">
+            <label class="label">File name prefix</label>
+            <input class="input" id="exportPrefix" value="Pipeline_Export" />
+            <div class="helper">Output: <span class="mono" id="fileNamePreview">Pipeline_Export_part01.xlsx</span></div>
+          </div>
+          <div class="field">
+            <label class="label">Max rows per file</label>
+            <input class="input num" id="maxRows" type="number" value="1000000" min="1000" max="1000000" />
+            <div class="helper">Excel hard cap is 1,048,576 rows.</div>
+          </div>
+        </div>
+
+        @* Pipeline summary strip *@
+        <div class="switch-row" style="background:var(--blue-100);border-color:#C9DDF0">
+          <div>
+            <div class="sw-label" style="color:var(--navy-700)">Pipeline summary</div>
+            <div class="sw-hint" style="color:var(--navy-700);opacity:0.85" id="pipelineSummary">
+              Configuring…
+            </div>
+          </div>
+        </div>
+
+        @* ── Pipeline progress (shown when running) ───────── *@
+        <div id="pipelineProgress" style="display:none;margin-top:16px">
+          <div class="row-between" style="margin-bottom:8px">
+            <strong style="font-size:13.5px" id="pipelineTitle">Running pipeline…</strong>
+            <span class="text-sm muted num" id="pipelinePct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="pipelineBar" style="width:0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="pipelineStage">Initialising…</span>
+            <span id="pipelineRows"></span>
+          </div>
+
+          <div class="stage-list mt-12">
+            <div class="stage-row" id="pl-import">
+              <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+              <span>Import Excel to staging table</span>
+              <span class="stage-time" id="pl-import-t">—</span>
+            </div>
+            <div class="stage-row" id="pl-clean">
+              <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+              <span>Extract vendor codes &amp; PO numbers</span>
+              <span class="stage-time" id="pl-clean-t">—</span>
+            </div>
+            <div class="stage-row" id="pl-export">
+              <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+              <span>Export cleaned data to Excel</span>
+              <span class="stage-time" id="pl-export-t">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row-between mt-16">
+          <button class="btn btn-ghost" id="backBtn3" onclick="goStep(2)">
+            <svg width="14" height="14"><use href="#ic-arrow-l"/></svg> Back
+          </button>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button class="btn btn-danger btn-sm" id="cancelPipelineBtn" onclick="cancelPipeline()" style="display:none">Cancel</button>
+            <button class="btn btn-success" id="runPipelineBtn" onclick="runPipeline()">
+              <svg width="12" height="12"><use href="#ic-play"/></svg> Run Pipeline
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.left column -->
+
+    @* ── RIGHT: stats panels ──────────────────────────── *@
+    <div class="side-stack">
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:12px">
+          <h3 style="font-size:14px">Last pipeline run</h3>
+          <span class="badge badge-muted" id="lastRunBadge">No runs yet</span>
+        </div>
+        <div class="text-sm muted" id="lastRunMeta">Complete a run to see stats here.</div>
+        <div class="lastrun-grid mt-12" id="lastRunGrid" style="display:none">
+          <div><div class="k">Imported</div><div class="v" id="lr-imported">—</div></div>
+          <div><div class="k">Cleaned</div><div class="v" id="lr-cleaned">—</div></div>
+          <div><div class="k">Exported</div><div class="v" id="lr-exported">—</div></div>
+          <div><div class="k">Duration</div><div class="v" id="lr-duration">—</div></div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0">
+        <div class="metric-strip">
+          <div class="metric">
+            <div class="metric-label">Total Runs</div>
+            <div class="metric-value" id="stat-runs">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Successes</div>
+            <div class="metric-value" id="stat-ok">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Failures</div>
+            <div class="metric-value" id="stat-fail">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:8px">
+          <h3 style="font-size:14px">Recent runs</h3>
+        </div>
+        <div class="runs" id="recentRuns">
+          <div style="color:var(--text-muted);font-size:13px;font-style:italic;padding:8px 0">No runs yet</div>
+        </div>
+      </div>
+
+    </div><!-- /.side-stack -->
+
+  </div><!-- /.two-col -->
+</div><!-- /.page -->
+
+@section Scripts {
+<script>
+  // ═══════════════════════════════════════════════════════════════
+  //  Pipeline state
+  // ═══════════════════════════════════════════════════════════════
+  let currentStep     = 1;
+  let completedSteps  = [];
+  let selectedFiles   = new DataTransfer();
+  let loadMode        = 'drop';
+  let isDryRun        = true;
+  let excludedCols    = [];
+  let availableCols   = [];
+  let connection      = null;
+  let cancelledJobId  = null;
+  let pipelineRunning = false;
+  let stats = { runs: 0, ok: 0, fail: 0 };
+
+  const MAPPING_ROLES = [
+    { key: 'vendor',             id: 'mapVendor'    },
+    { key: 'invoiceDescription', id: 'mapInvDesc'   },
+    { key: 'purchasingDocument', id: 'mapPO'        },
+    { key: 'processed',          id: 'mapProcessed' },
+  ];
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Step navigation
+  // ═══════════════════════════════════════════════════════════════
+  function goStep(n) {
+    if (n < 1 || n > 3) return;
+    if (n > currentStep && !completedSteps.includes(currentStep) && n !== currentStep + 1) return;
+    if (n > 1 && !completedSteps.includes(1) && n !== 1) return;
+    currentStep = n;
+    updateStepperUI();
+    document.querySelectorAll('.step-panel').forEach(p => {
+      p.style.display = p.id === 'panel-' + n ? '' : 'none';
+    });
+    if (n === 2) loadTableInfo();
+    if (n === 3) updatePipelineSummary();
+  }
+
+  function updateStepperUI() {
+    [1, 2, 3].forEach(n => {
+      const el   = document.querySelector('[data-step="' + n + '"]');
+      const dot  = document.getElementById('dot-' + n);
+      const ok   = completedSteps.includes(n);
+      const active = n === currentStep;
+      el.classList.toggle('active',   active);
+      el.classList.toggle('complete', ok);
+      el.classList.toggle('is-clickable', ok || n <= currentStep);
+      if (ok) dot.innerHTML = '<svg width="15" height="15"><use href="#ic-check"/></svg>';
+      else    dot.textContent = n;
+    });
+    [1, 2].forEach(n => {
+      const arr = document.getElementById('arrow-' + n);
+      if (arr) arr.classList.toggle('is-done', completedSteps.includes(n));
+    });
+  }
+
+  function completeStep1() {
+    if (!completedSteps.includes(1)) completedSteps.push(1);
+    goStep(2);
+  }
+
+  function completeStep2() {
+    if (!completedSteps.includes(2)) completedSteps.push(2);
+    goStep(3);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  File handling (Step 1)
+  // ═══════════════════════════════════════════════════════════════
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  function handleFiles(files) {
+    for (const f of files) {
+      if (!f.name.match(/\.xlsx?$/i)) continue;
+      selectedFiles.items.add(f);
+    }
+    renderFileList();
+  }
+
+  function removeFile(index) {
+    const dt = new DataTransfer();
+    [...selectedFiles.files].forEach((f, i) => { if (i !== index) dt.items.add(f); });
+    selectedFiles = dt;
+    renderFileList();
+  }
+
+  function renderFileList() {
+    const empty  = document.getElementById('dropZone');
+    const filled = document.getElementById('filesFilled');
+    const list   = document.getElementById('fileList');
+    if (selectedFiles.files.length === 0) {
+      empty.style.display  = '';
+      filled.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    empty.style.display  = 'none';
+    filled.style.display = '';
+    list.innerHTML = [...selectedFiles.files].map((f, i) => `
+      <div class="file-row" ${i > 0 ? 'style="margin-top:10px"' : ''}>
+        <div class="file-icon"><svg width="18" height="18"><use href="#ic-file-excel"/></svg></div>
+        <div style="min-width:0">
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${(f.size/1024/1024).toFixed(1)} MB</div>
+        </div>
+        <button class="file-remove" onclick="removeFile(${i})">
+          <svg width="14" height="14"><use href="#ic-x"/></svg>
+        </button>
+      </div>`).join('');
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Load mode (Step 1)
+  // ═══════════════════════════════════════════════════════════════
+  function setLoadMode(m) {
+    loadMode = m;
+    document.getElementById('modeDropBtn').classList.toggle('active', m === 'drop');
+    document.getElementById('modeAppendBtn').classList.toggle('active', m === 'append');
+  }
+
+  function onTableChange() {
+    if (currentStep === 2) loadTableInfo();
+    updatePipelineSummary();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Connection test
+  // ═══════════════════════════════════════════════════════════════
+  async function testConnection() {
+    const cs = document.getElementById('connString').value.trim();
+    if (!cs) { showConnHelper('error', 'Enter a connection string first.'); return; }
+    const btn = document.getElementById('testBtn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch('/api/test-connection', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionString: cs })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showConnHelper('ok', '✓ Connected successfully');
+        setPill('ok', 'Connected');
+      } else {
+        showConnHelper('error', '✗ ' + data.message);
+        setPill('error', 'Failed');
+      }
+    } catch (e) {
+      showConnHelper('error', '✗ ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  function showConnHelper(state, msg) {
+    const el = document.getElementById('connHelper');
+    el.className = state === 'ok' ? 'helper-ok' : state === 'error' ? 'helper-error' : 'helper';
+    el.textContent = msg;
+  }
+  function setPill(state, text) {
+    const pill = document.getElementById('connPill');
+    pill.className = 'conn-pill' + (state === 'ok' ? '' : state === 'error' ? ' is-error' : ' is-unknown');
+    document.getElementById('connPillText').textContent = text;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Table info + column chips (Step 2)
+  // ═══════════════════════════════════════════════════════════════
+  async function loadTableInfo() {
+    const table = document.getElementById('tableName').value;
+    const container = document.getElementById('chipsContainer');
+    container.innerHTML = '<span class="text-sm muted">Loading…</span>';
+
+    try {
+      const res  = await fetch(`/Clean?handler=TableInfo&tableName=${encodeURIComponent(table)}`);
+      const data = await res.json();
+
+      if (data.exists && data.rowCount > 0) {
+        document.getElementById('cleanRowBadge').style.display = '';
+        document.getElementById('cleanRowCount').textContent = data.rowCount.toLocaleString();
+      }
+
+      if (data.columns && data.columns.length > 0) {
+        availableCols = data.columns;
+        excludedCols  = [];
+        renderChips();
+        populateMappingDropdowns(data.columns, data.mapping);
+      } else {
+        container.innerHTML = '<span class="text-sm muted">No columns found — import data first.</span>';
+      }
+    } catch {
+      container.innerHTML = '<span class="text-sm muted">Could not load table info.</span>';
+    }
+  }
+
+  function renderChips() {
+    const container = document.getElementById('chipsContainer');
+    const visible = availableCols.filter(c => !excludedCols.includes(c));
+    container.innerHTML = visible.map(c => `
+      <span class="chip">${c}
+        <button onclick="excludeCol('${c}')"><svg width="11" height="11"><use href="#ic-x"/></svg></button>
+      </span>`).join('') +
+      `<button class="btn btn-ghost btn-sm" style="height:26px" onclick="restoreChips()">
+        <svg width="11" height="11"><use href="#ic-refresh"/></svg> Reset
+      </button>`;
+  }
+
+  function excludeCol(col) {
+    if (!excludedCols.includes(col)) excludedCols.push(col);
+    renderChips();
+  }
+
+  function restoreChips() {
+    excludedCols = [];
+    renderChips();
+  }
+
+  function populateMappingDropdowns(columns, suggested) {
+    for (const role of MAPPING_ROLES) {
+      const sel = document.getElementById(role.id);
+      if (!sel) continue;
+      sel.innerHTML = '<option value="">— not mapped —</option>';
+      for (const col of columns) {
+        const opt = document.createElement('option');
+        opt.value = col; opt.textContent = col;
+        if (col === suggested?.[role.key]) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+  }
+
+  function getColumnMap() {
+    const map = {};
+    for (const role of MAPPING_ROLES) {
+      const val = document.getElementById(role.id)?.value || '';
+      map[role.key] = val || null;
+    }
+    // Additional roles not in the simplified UI
+    map.documentHeader = null; map.assignment = null; map.lineItemType = null;
+    return map;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  PO digit checkboxes (Step 2)
+  // ═══════════════════════════════════════════════════════════════
+  document.querySelectorAll('.po-check-label').forEach(label => {
+    label.addEventListener('click', () => {
+      const cb = label.querySelector('input');
+      cb.checked = !cb.checked;
+      label.classList.toggle('checked', cb.checked);
+    });
+  });
+
+  function getPoDigits() {
+    return [...document.querySelectorAll('.po-check-label.checked input')]
+      .map(cb => parseInt(cb.value));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Dry run switch (Step 2)
+  // ═══════════════════════════════════════════════════════════════
+  function toggleDryRun() {
+    isDryRun = !isDryRun;
+    document.getElementById('drySwitch').classList.toggle('on', isDryRun);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Pipeline summary (Step 3)
+  // ═══════════════════════════════════════════════════════════════
+  document.getElementById('exportPrefix').addEventListener('input', () => {
+    const p = document.getElementById('exportPrefix').value || 'Pipeline_Export';
+    document.getElementById('fileNamePreview').textContent = p + '_part01.xlsx';
+  });
+
+  function updatePipelineSummary() {
+    const table   = document.getElementById('tableName')?.value || '—';
+    const mode    = loadMode === 'drop' ? 'Drop & Recreate' : 'Append';
+    const hasFiles = selectedFiles.files.length > 0;
+    const steps   = hasFiles ? `Import ${selectedFiles.files.length} file(s)` : 'Skip import';
+    document.getElementById('pipelineSummary').textContent =
+      `${steps} → Clean ${table} → Export to Excel · ${mode}`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Run Pipeline (orchestrates Import → Clean → Export)
+  // ═══════════════════════════════════════════════════════════════
+  async function runPipeline() {
+    if (pipelineRunning) return;
+    const outputFolder = document.getElementById('outputFolder').value.trim();
+    if (!outputFolder) { alert('Please enter an output folder.'); return; }
+
+    const poDigits = getPoDigits();
+    if (poDigits.length === 0) { alert('Select at least one PO leading digit.'); return; }
+
+    pipelineRunning = true;
+    const pipelineStart = Date.now();
+    let importedRows = 0;
+
+    document.getElementById('runPipelineBtn').disabled = true;
+    document.getElementById('backBtn3').disabled       = true;
+    document.getElementById('cancelPipelineBtn').style.display = '';
+    document.getElementById('pipelineProgress').style.display  = '';
+    resetPipelineTicks();
+    setPipelineProgress(0, 'Initialising…', '');
+
+    const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+
+    try {
+      // ─── Phase 1: Import (if files selected) ─────────────────
+      const hasFiles = selectedFiles.files.length > 0;
+      if (hasFiles) {
+        setPlStage('pl-import', 'active');
+        const importJobId = crypto.randomUUID();
+        cancelledJobId    = importJobId;
+
+        await setupSignalR(importJobId);
+        const importDone = new Promise((resolve, reject) => {
+          connection.on('progress', (msg) => {
+            const globalPct = msg.percent * 0.35;
+            setPipelineProgress(globalPct, msg.message, msg.rowsDone > 0 ? msg.rowsDone.toLocaleString() + ' rows' : '');
+            if (msg.isComplete) { importedRows = msg.rowsDone; resolve(); }
+            if (msg.isError)    reject(new Error(msg.message));
+          });
+        });
+
+        const fd = new FormData();
+        fd.append('jobId', importJobId);
+        fd.append('tableName', document.getElementById('tableName').value);
+        fd.append('schemaName', 'dbo');
+        fd.append('replaceTable', loadMode === 'drop');
+        fd.append('__RequestVerificationToken', token);
+        for (const f of selectedFiles.files) fd.append('files', f);
+        await fetch('/Import?handler=Run', { method: 'POST', body: fd });
+        await importDone;
+        setPlStage('pl-import', 'done', ((Date.now() - pipelineStart) / 1000).toFixed(1) + 's');
+      } else {
+        setPlStage('pl-import', 'done', 'skipped');
+      }
+
+      // ─── Phase 2: Clean ──────────────────────────────────────
+      setPlStage('pl-clean', 'active');
+      const cleanJobId = crypto.randomUUID();
+      cancelledJobId   = cleanJobId;
+
+      await setupSignalR(cleanJobId);
+      const cleanDone = new Promise((resolve, reject) => {
+        connection.on('progress', (msg) => {
+          const globalPct = 35 + msg.percent * 0.30;
+          setPipelineProgress(globalPct, msg.message, '');
+          if (msg.isComplete) resolve();
+          if (msg.isError)    reject(new Error(msg.message));
+        });
+      });
+
+      await fetch('/Clean?handler=Run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+        body: JSON.stringify({
+          tableName:       document.getElementById('tableName').value,
+          jobId:           cleanJobId,
+          poLeadingDigits: getPoDigits(),
+          columnMap:       getColumnMap(),
+        })
+      });
+      await cleanDone;
+      setPlStage('pl-clean', 'done', ((Date.now() - pipelineStart) / 1000).toFixed(1) + 's');
+
+      // ─── Phase 3: Export ─────────────────────────────────────
+      setPlStage('pl-export', 'active');
+      const exportJobId = crypto.randomUUID();
+      cancelledJobId    = exportJobId;
+      let exportedRows  = 0;
+
+      await setupSignalR(exportJobId);
+      const exportDone = new Promise((resolve, reject) => {
+        connection.on('progress', (msg) => {
+          const globalPct = 65 + msg.percent * 0.35;
+          setPipelineProgress(globalPct, msg.message, msg.rowsDone > 0 ? msg.rowsDone.toLocaleString() + ' rows' : '');
+          if (msg.isComplete) { exportedRows = msg.rowsDone; resolve(); }
+          if (msg.isError)    reject(new Error(msg.message));
+        });
+      });
+
+      const table    = document.getElementById('tableName').value;
+      const prefix   = document.getElementById('exportPrefix').value || 'Pipeline_Export';
+      await fetch('/Export?handler=Run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+        body: JSON.stringify({
+          jobId:         exportJobId,
+          queryOrView:   `SELECT * FROM dbo.${table}`,
+          isRawQuery:    true,
+          outputFolder:  outputFolder,
+          filePrefix:    prefix,
+          sheetName:     'Data',
+          maxRowsPerFile: parseInt(document.getElementById('maxRows').value) || 1000000,
+          isDryRun:      isDryRun,
+        })
+      });
+      await exportDone;
+      setPlStage('pl-export', 'done', ((Date.now() - pipelineStart) / 1000).toFixed(1) + 's');
+
+      // ─── Complete ─────────────────────────────────────────────
+      const elapsed = ((Date.now() - pipelineStart) / 1000).toFixed(1) + 's';
+      setPipelineProgress(100, 'Pipeline complete', exportedRows.toLocaleString() + ' rows exported');
+      document.getElementById('pipelineBar').className = 'progress-fill is-success';
+      document.getElementById('pipelineTitle').textContent = 'Pipeline complete';
+
+      completedSteps = [1, 2, 3];
+      updateStepperUI();
+
+      onPipelineComplete(true, importedRows, exportedRows, elapsed);
+
+    } catch (err) {
+      document.getElementById('pipelineBar').className = 'progress-fill is-error';
+      document.getElementById('pipelineTitle').textContent = 'Pipeline failed';
+      document.getElementById('pipelineStage').textContent = err.message || 'An error occurred';
+      onPipelineComplete(false, 0, 0, ((Date.now() - pipelineStart) / 1000).toFixed(1) + 's');
+    } finally {
+      pipelineRunning = false;
+      document.getElementById('runPipelineBtn').disabled = false;
+      document.getElementById('backBtn3').disabled       = false;
+      document.getElementById('cancelPipelineBtn').style.display = 'none';
+    }
+  }
+
+  async function cancelPipeline() {
+    if (!cancelledJobId) return;
+    const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+    // Try all cancel endpoints
+    ['Import','Clean','Export'].forEach(p => {
+      fetch(`/${p}?handler=Cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+        body: JSON.stringify({ jobId: cancelledJobId })
+      }).catch(() => {});
+    });
+    pipelineRunning = false;
+    document.getElementById('runPipelineBtn').disabled = false;
+    document.getElementById('backBtn3').disabled       = false;
+    document.getElementById('cancelPipelineBtn').style.display = 'none';
+    document.getElementById('pipelineTitle').textContent = 'Cancelled';
+    document.getElementById('pipelineBar').className = 'progress-fill is-error';
+  }
+
+  // ─── SignalR helper (re-connects for each phase)
+  async function setupSignalR(jobId) {
+    if (connection) { try { connection.off('progress'); await connection.stop(); } catch {} }
+    connection = new signalR.HubConnectionBuilder()
+      .withUrl('/progressHub').withAutomaticReconnect().build();
+    await connection.start();
+    await connection.invoke('JoinJob', jobId);
+  }
+
+  // ─── Pipeline progress helpers
+  function setPipelineProgress(pct, stage, rows) {
+    document.getElementById('pipelineBar').style.width    = Math.min(pct, 100) + '%';
+    document.getElementById('pipelinePct').textContent    = Math.round(pct) + '%';
+    document.getElementById('pipelineStage').textContent  = stage;
+    document.getElementById('pipelineRows').textContent   = rows;
+  }
+
+  function setPlStage(id, state, timeText) {
+    const row  = document.getElementById(id);
+    const tick = row?.querySelector('.stage-tick');
+    if (!tick) return;
+    tick.classList.remove('is-pending','is-active');
+    if (state === 'active') {
+      tick.classList.add('is-active');
+      tick.innerHTML = '<span style="width:6px;height:6px;background:currentColor;border-radius:50%;display:inline-block"></span>';
+    } else if (state === 'done') {
+      tick.innerHTML = '<svg width="12" height="12"><use href="#ic-check"/></svg>';
+      const te = document.getElementById(id + '-t');
+      if (te && timeText) te.textContent = timeText;
+    }
+  }
+
+  function resetPipelineTicks() {
+    ['pl-import','pl-clean','pl-export'].forEach(id => {
+      const tick = document.getElementById(id)?.querySelector('.stage-tick');
+      if (tick) { tick.className = 'stage-tick is-pending'; tick.innerHTML = '<span style="font-size:11px">·</span>'; }
+      const t = document.getElementById(id + '-t');
+      if (t) t.textContent = '—';
+    });
+  }
+
+  // ─── Update right-column stats after pipeline
+  function onPipelineComplete(ok, imported, exported, elapsed) {
+    stats.runs++;
+    if (ok) stats.ok++; else stats.fail++;
+    document.getElementById('stat-runs').textContent = stats.runs;
+    document.getElementById('stat-ok').textContent   = stats.ok;
+    document.getElementById('stat-fail').textContent = stats.fail;
+
+    const badge = document.getElementById('lastRunBadge');
+    badge.className = ok ? 'badge badge-success' : 'badge badge-fail';
+    badge.innerHTML = `<span class="badge-dot"></span> ${ok ? 'Success' : 'Failed'}`;
+    document.getElementById('lastRunMeta').textContent = 'Just now · ' + document.getElementById('tableName').value;
+    document.getElementById('lr-imported').textContent = imported.toLocaleString();
+    document.getElementById('lr-cleaned').textContent  = '—';
+    document.getElementById('lr-exported').textContent = exported.toLocaleString();
+    document.getElementById('lr-duration').textContent = elapsed;
+    document.getElementById('lastRunGrid').style.display = '';
+
+    const runs = document.getElementById('recentRuns');
+    const placeholder = runs.querySelector('[style*="italic"]');
+    if (placeholder) placeholder.remove();
+    const row = document.createElement('div');
+    row.className = 'run-row';
+    row.innerHTML = `
+      <span class="badge ${ok ? 'badge-success' : 'badge-fail'}">
+        <span class="badge-dot"></span> ${ok ? 'Success' : 'Failed'}
+      </span>
+      <div>
+        <div class="run-name">Pipeline run</div>
+        <div class="run-meta">Just now · ${document.getElementById('tableName').value}</div>
+      </div>
+      <div class="run-rows">${exported > 0 ? exported.toLocaleString() : '—'}</div>`;
+    runs.prepend(row);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Reset
+  // ═══════════════════════════════════════════════════════════════
+  function resetPipeline() {
+    currentStep    = 1;
+    completedSteps = [];
+    selectedFiles  = new DataTransfer();
+    loadMode       = 'drop';
+    excludedCols   = [];
+    pipelineRunning = false;
+    renderFileList();
+    updateStepperUI();
+    goStep(1);
+    document.getElementById('pipelineProgress').style.display = 'none';
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Init
+  // ═══════════════════════════════════════════════════════════════
+  window.addEventListener('DOMContentLoaded', () => {
+    updateStepperUI();
+    document.getElementById('drySwitch').classList.add('on');
+  });
+</script>
+}

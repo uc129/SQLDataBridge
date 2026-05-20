@@ -9,6 +9,8 @@ builder.Services.AddControllers(); // Adds the services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<SqlExportService>();
 builder.Services.AddScoped<ExcelImportService>();
+builder.Services.AddScoped<CleanService>();
+builder.Services.AddScoped<MetricsService>();
 
 var app = builder.Build();
 

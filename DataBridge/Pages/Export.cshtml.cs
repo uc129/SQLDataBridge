@@ -8,7 +8,6 @@ namespace DataBridge.Pages;
 
 public class ExportModel(SqlExportService exportService, IConfiguration config) : PageModel
 {
-    // Track active cancellation tokens by jobId
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _jobs = new();
 
     public void OnGet() { }
@@ -18,23 +17,24 @@ public class ExportModel(SqlExportService exportService, IConfiguration config) 
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
+        var cs = config.GetConnectionString("Default");
+        if (string.IsNullOrWhiteSpace(cs))
+            return BadRequest("Connection string is not configured. Set ConnectionStrings:Default in appsettings.json.");
+
         var cts = new CancellationTokenSource();
         _jobs[req.JobId] = cts;
 
         var exportReq = new ExportRequest
         {
-            ConnectionString = req.ConnectionString,
+            ConnectionString = cs,
             QueryOrView      = req.QueryOrView,
             IsRawQuery       = req.IsRawQuery,
-            OutputFolder     = req.IsDryRun
-                                ? Path.GetTempPath()   // dry-run doesn't actually write
-                                : req.OutputFolder,
+            OutputFolder     = req.IsDryRun ? Path.GetTempPath() : req.OutputFolder,
             FilePrefix       = req.FilePrefix,
             SheetName        = req.SheetName,
             MaxRowsPerFile   = req.MaxRowsPerFile,
         };
 
-        // Fire and forget — progress is sent via SignalR
         _ = Task.Run(async () =>
         {
             try   { await exportService.ExportAsync(exportReq, req.JobId, cts.Token); }
@@ -54,15 +54,14 @@ public class ExportModel(SqlExportService exportService, IConfiguration config) 
 
 public class ExportRunRequest
 {
-    public string JobId            { get; set; } = string.Empty;
-    public string ConnectionString { get; set; } = string.Empty;
-    public string QueryOrView      { get; set; } = string.Empty;
-    public bool   IsRawQuery       { get; set; }
-    public string OutputFolder     { get; set; } = string.Empty;
-    public string FilePrefix       { get; set; } = "export";
-    public string SheetName        { get; set; } = "Data";
-    public int    MaxRowsPerFile   { get; set; } = 1_000_000;
-    public bool   IsDryRun         { get; set; }
+    public string JobId          { get; set; } = string.Empty;
+    public string QueryOrView    { get; set; } = string.Empty;
+    public bool   IsRawQuery     { get; set; }
+    public string OutputFolder   { get; set; } = string.Empty;
+    public string FilePrefix     { get; set; } = "export";
+    public string SheetName      { get; set; } = "Data";
+    public int    MaxRowsPerFile { get; set; } = 1_000_000;
+    public bool   IsDryRun       { get; set; }
 }
 
 public class CancelRequest

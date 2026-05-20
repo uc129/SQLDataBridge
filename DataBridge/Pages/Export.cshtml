@@ -1,221 +1,457 @@
 @page
 @model DataBridge.Pages.ExportModel
 @{
-    ViewData["Title"] = "SQL → Excel Export";
+    ViewData["Title"] = "Quick Export";
+    ViewData["ActivePage"] = "export";
 }
 
-<div class="page-header">
-    <a href="/" class="back-link">← Home</a>
-    <h2>⬇ SQL → Excel Export</h2>
-    <p>Export a SQL view or custom query to one or more Excel files.</p>
+@* ── Topbar ───────────────────────────────────────────────────── *@
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Quick Export</h1>
+    <div class="sub">SQL → Excel, formatted and ready to ship.</div>
+  </div>
+  <div class="topbar-right">
+    <span class="conn-pill is-unknown" id="connPill">
+      <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
+      <span id="connPillText">Not tested</span>
+    </span>
+    <button class="tb-icon-btn" title="Notifications">
+      <svg width="18" height="18"><use href="#ic-bell"/></svg>
+    </button>
+    <div class="tb-avatar">UC</div>
+  </div>
 </div>
 
-<div class="form-card">
-    <form id="exportForm">
-        @Html.AntiForgeryToken()
+@* ── Page content ─────────────────────────────────────────────── *@
+<div class="page">
 
-        <div class="form-section">
-            <h4>Database Connection</h4>
-            <div class="form-group">
-                <label>Connection String</label>
-                <input type="password" id="connStr" name="connStr" class="form-control"
-                       placeholder="mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+17..."
-                       autocomplete="off" />
-                <small>Your password is never stored or logged.</small>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline" onclick="testConnection()">
-                Test Connection
-            </button>
-            <span id="connStatus"></span>
+  @* Page header *@
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Quick Export</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#2BA39A">
+          <svg width="20" height="20"><use href="#ic-download"/></svg>
         </div>
-
-        <div class="form-section">
-            <h4>Data Source</h4>
-            <div class="toggle-group">
-                <label>
-                    <input type="radio" name="sourceType" value="view" checked onchange="toggleSource()" />
-                    View / Table name
-                </label>
-                <label>
-                    <input type="radio" name="sourceType" value="query" onchange="toggleSource()" />
-                    Custom SQL query
-                </label>
-            </div>
-
-            <div id="viewInput" class="form-group">
-                <label>View or Table</label>
-                <input type="text" id="viewName" class="form-control"
-                       placeholder="dbo.QTR34022" />
-            </div>
-
-            <div id="queryInput" class="form-group" style="display:none">
-                <label>SQL Query</label>
-                <textarea id="sqlQuery" class="form-control code-input" rows="4"
-                          placeholder="SELECT * FROM dbo.QTR34022 WHERE company_code NOT LIKE '1000'"></textarea>
-            </div>
-        </div>
-
-        <div class="form-section">
-            <h4>Output Settings</h4>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Output Folder</label>
-                    <input type="text" id="outputFolder" class="form-control"
-                           placeholder="C:\DataBridge\Output\VendorData" />
-                </div>
-                <div class="form-group">
-                    <label>File Prefix</label>
-                    <input type="text" id="filePrefix" class="form-control"
-                           value="export" placeholder="export" />
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Sheet Name</label>
-                    <input type="text" id="sheetName" class="form-control" value="Data" />
-                </div>
-                <div class="form-group">
-                    <label>Max Rows Per File</label>
-                    <input type="number" id="maxRows" class="form-control"
-                           value="1000000" min="1000" max="1000000" />
-                </div>
-            </div>
-        </div>
-
-        <div class="form-actions">
-            <button type="button" class="btn btn-outline" onclick="dryRun()">Dry Run</button>
-            <button type="button" class="btn btn-primary" onclick="startExport()" id="exportBtn">
-                Start Export
-            </button>
-            <button type="button" class="btn btn-danger" onclick="cancelJob()" id="cancelBtn" style="display:none">
-                Cancel
-            </button>
-        </div>
-    </form>
-</div>
-
-<div id="progressSection" class="progress-section" style="display:none">
-    <h4>Progress</h4>
-    <div class="progress-bar-wrap">
-        <div class="progress-bar" id="progressBar"></div>
+        Quick Export
+      </h1>
+      <p class="page-sub">Run a query or pick a view and we'll write a formatted Excel file — auto-split at 1 M rows.</p>
     </div>
-    <div id="progressStatus" class="progress-status"></div>
-    <div id="progressLog"    class="progress-log"></div>
-</div>
+    <div class="page-actions">
+      <button class="btn btn-secondary" onclick="resetForm()">
+        <svg width="14" height="14"><use href="#ic-refresh"/></svg> Reset
+      </button>
+    </div>
+  </div>
 
-<div id="resultSection" class="result-section" style="display:none"></div>
+  @* Two-column layout *@
+  <div class="two-col">
+
+    @* ── Left: config card ──────────────────────────────── *@
+    <div class="card card-pad">
+      <div class="card-head">
+        <div>
+          <h3>
+            <span style="width:26px;height:26px;border-radius:6px;background:var(--teal-50);color:var(--teal-500);display:grid;place-items:center">
+              <svg width="14" height="14"><use href="#ic-download"/></svg>
+            </span>
+            Configure export
+          </h3>
+          <div class="sub">Either point us at a table/view, or paste a query.</div>
+        </div>
+      </div>
+
+      @Html.AntiForgeryToken()
+
+      @* Connection string *@
+      <div class="field">
+        <label class="label">Connection string</label>
+        <div class="conn-wrap">
+          <input class="input mono" id="connString" type="password"
+                 placeholder="Server=...;Database=...;User ID=...;Password=..."
+                 autocomplete="off" />
+          <button class="btn btn-secondary btn-sm test-inline" onclick="testConnection()" id="testBtn">
+            Test Connection
+          </button>
+        </div>
+        <div id="connHelper" class="helper">Enter your SQL Server connection string above.</div>
+      </div>
+
+      @* Query / Table subtabs *@
+      <div class="subtabs">
+        <div class="subtab active" id="tabQuery" onclick="setMode('query')">SQL Query</div>
+        <div class="subtab" id="tabTable" onclick="setMode('table')">Table / View</div>
+      </div>
+
+      @* SQL Query panel *@
+      <div class="field" id="queryPanel">
+        <label class="label">Query</label>
+        <textarea class="textarea mono" id="sqlQuery" rows="7"
+          placeholder="SELECT * FROM dbo.YourView WHERE ..."></textarea>
+        <div class="helper">Read-only context — SELECT queries only.</div>
+      </div>
+
+      @* Table / View panel *@
+      <div class="field" id="tablePanel" style="display:none">
+        <label class="label">Table or view name</label>
+        <input class="input mono" id="viewName" placeholder="dbo.vw_vendor_spend_summary" />
+        <div class="helper">Specify schema-qualified name, e.g. <span class="mono">dbo.QTR34022</span></div>
+      </div>
+
+      @* Output settings *@
+      <div class="field-row cols-2">
+        <div class="field">
+          <label class="label">Output folder</label>
+          <div class="input-row">
+            <input class="input mono" id="outputFolder" placeholder="C:\DataBridge\Output\" />
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">File name prefix</label>
+          <input class="input" id="filePrefix" value="export" />
+          <div class="helper">e.g. <span class="mono">export_part01.xlsx</span></div>
+        </div>
+      </div>
+
+      <div class="field-row cols-2">
+        <div class="field">
+          <label class="label">Sheet name</label>
+          <input class="input" id="sheetName" value="Data" />
+        </div>
+        <div class="field">
+          <label class="label">Max rows per file</label>
+          <input class="input num" id="maxRows" type="number" value="1000000" min="1000" max="1000000" />
+          <div class="helper">Excel hard cap is 1,048,576 rows.</div>
+        </div>
+      </div>
+
+      @* Dry-run switch *@
+      <div class="switch-row">
+        <div>
+          <div class="sw-label">Dry run</div>
+          <div class="sw-hint">Execute the query and show a row count — don't write a file.</div>
+        </div>
+        <div class="switch" id="drySwitch" onclick="toggleDryRun()"></div>
+      </div>
+
+      @* Actions *@
+      <div class="row-between mt-16">
+        <span class="text-sm muted">Format: <span class="mono">.xlsx</span> · bold headers · frozen row 1 · auto-filter</span>
+        <button class="btn btn-primary" id="exportBtn" onclick="startExport()">
+          <svg width="13" height="13"><use href="#ic-download"/></svg> Export to Excel
+        </button>
+      </div>
+
+      @* ── Progress (shown after job starts) ───────── *@
+      <div id="progressSection" style="display:none;margin-top:20px">
+        <div class="row-between" style="margin-bottom:8px">
+          <strong style="font-size:13.5px" id="progressTitle">Exporting…</strong>
+          <span class="text-sm muted num" id="progressPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressBar" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progressStage">Starting…</span>
+          <span id="progressRows"></span>
+        </div>
+
+        <div class="stage-list">
+          <div class="stage-row" id="stg-parse">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Parse query &amp; estimate rows</span>
+            <span class="stage-time" id="stg-parse-t">—</span>
+          </div>
+          <div class="stage-row" id="stg-stream">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Stream rows in chunks</span>
+            <span class="stage-time" id="stg-stream-t">—</span>
+          </div>
+          <div class="stage-row" id="stg-write">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Write workbook &amp; style headers</span>
+            <span class="stage-time" id="stg-write-t">—</span>
+          </div>
+        </div>
+
+        <div class="row-end mt-12">
+          <button class="btn btn-danger btn-sm" id="cancelBtn" onclick="cancelJob()" style="display:none">Cancel</button>
+          <button class="btn btn-ghost btn-sm" id="resetAfterBtn" onclick="resetProgress()" style="display:none">New export</button>
+        </div>
+      </div>
+
+    </div><!-- /.left card -->
+
+    @* ── Right: stats panels ─────────────────────────── *@
+    <div class="side-stack">
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:12px">
+          <h3 style="font-size:14px">Last export</h3>
+          <span class="badge badge-muted" id="lastRunBadge">No runs yet</span>
+        </div>
+        <div class="text-sm muted" id="lastRunMeta">Run a job to see stats here.</div>
+        <div class="lastrun-grid mt-12" id="lastRunGrid" style="display:none">
+          <div><div class="k">Rows</div><div class="v" id="lr-rows">—</div></div>
+          <div><div class="k">Files</div><div class="v" id="lr-files">—</div></div>
+          <div><div class="k">Size</div><div class="v" id="lr-size">—</div></div>
+          <div><div class="k">Duration</div><div class="v" id="lr-duration">—</div></div>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:8px">
+          <h3 style="font-size:14px">Recent exports</h3>
+        </div>
+        <table class="t">
+          <thead>
+            <tr><th>File</th><th>When</th><th style="text-align:right">Rows</th></tr>
+          </thead>
+          <tbody id="recentBody">
+            <tr><td colspan="3" style="color:var(--text-muted);font-style:italic;text-align:center">No exports yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div><!-- /.side-stack -->
+
+  </div><!-- /.two-col -->
+</div><!-- /.page -->
 
 @section Scripts {
 <script>
-    let connection = null;
-    let currentJobId = null;
-    let isDryRun = false;
+  let connection   = null;
+  let currentJobId = null;
+  let isDryRun     = false;
+  let queryMode    = 'query';
+  let jobStartTime = null;
 
-    function toggleSource() {
-        const isView = document.querySelector('input[name="sourceType"]:checked').value === 'view';
-        document.getElementById('viewInput').style.display  = isView ? '' : 'none';
-        document.getElementById('queryInput').style.display = isView ? 'none' : '';
+  // ── Source mode tabs
+  function setMode(m) {
+    queryMode = m;
+    document.getElementById('tabQuery').classList.toggle('active', m === 'query');
+    document.getElementById('tabTable').classList.toggle('active', m === 'table');
+    document.getElementById('queryPanel').style.display = m === 'query' ? '' : 'none';
+    document.getElementById('tablePanel').style.display = m === 'table' ? '' : 'none';
+  }
+
+  // ── Dry run switch
+  function toggleDryRun() {
+    isDryRun = !isDryRun;
+    const sw = document.getElementById('drySwitch');
+    sw.classList.toggle('on', isDryRun);
+    const btn = document.getElementById('exportBtn');
+    btn.innerHTML = isDryRun
+      ? '<svg width="13" height="13"><use href="#ic-search"/></svg> Dry Run'
+      : '<svg width="13" height="13"><use href="#ic-download"/></svg> Export to Excel';
+  }
+
+  // ── Connection test
+  async function testConnection() {
+    const cs = document.getElementById('connString').value.trim();
+    if (!cs) { showConnHelper('error', 'Enter a connection string first.'); return; }
+    const btn = document.getElementById('testBtn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionString: cs })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showConnHelper('ok', '✓ Connected successfully');
+        setPill('ok', 'Connected');
+      } else {
+        showConnHelper('error', '✗ ' + data.message);
+        setPill('error', 'Failed');
+      }
+    } catch (e) {
+      showConnHelper('error', '✗ ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
     }
+  }
 
-    async function testConnection() {
-        const cs = document.getElementById('connStr').value;
-        if (!cs) { alert('Enter a connection string first.'); return; }
-        const el = document.getElementById('connStatus');
-        el.textContent = 'Testing…';
-        el.className = 'status-testing';
-        const res = await fetch('/api/test-connection', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ connectionString: cs })
-        });
-        const data = await res.json();
-        el.textContent = data.success ? '✓ Connected' : '✗ ' + data.message;
-        el.className   = data.success ? 'status-ok' : 'status-error';
+  function showConnHelper(state, msg) {
+    const el = document.getElementById('connHelper');
+    el.className = state === 'ok' ? 'helper-ok' : state === 'error' ? 'helper-error' : 'helper';
+    el.textContent = msg;
+  }
+
+  function setPill(state, text) {
+    const pill = document.getElementById('connPill');
+    pill.className = 'conn-pill' + (state === 'ok' ? '' : state === 'error' ? ' is-error' : ' is-unknown');
+    document.getElementById('connPillText').textContent = text;
+  }
+
+  // ── Export job
+  function buildPayload() {
+    const isQuery = queryMode === 'query';
+    return {
+      queryOrView:    isQuery ? document.getElementById('sqlQuery').value
+                              : document.getElementById('viewName').value,
+      isRawQuery:     isQuery,
+      outputFolder:   document.getElementById('outputFolder').value,
+      filePrefix:     document.getElementById('filePrefix').value || 'export',
+      sheetName:      document.getElementById('sheetName').value  || 'Data',
+      maxRowsPerFile: parseInt(document.getElementById('maxRows').value) || 1000000,
+      isDryRun,
+    };
+  }
+
+  async function startExport() {
+    const payload = buildPayload();
+    if (!payload.queryOrView) { alert('Please enter a query or view name.'); return; }
+    if (!payload.outputFolder && !isDryRun) { alert('Please enter an output folder.'); return; }
+
+    const cs = document.getElementById('connString').value.trim();
+    if (!cs) { alert('Please enter a connection string.'); return; }
+
+    currentJobId = crypto.randomUUID();
+    jobStartTime = Date.now();
+    await setupSignalR(currentJobId);
+
+    document.getElementById('progressSection').style.display = '';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').className = 'progress-fill';
+    document.getElementById('progressPct').textContent = '0%';
+    document.getElementById('progressStage').textContent = 'Starting…';
+    document.getElementById('progressRows').textContent = '';
+    document.getElementById('progressTitle').textContent = isDryRun ? 'Running dry run…' : 'Exporting…';
+    document.getElementById('cancelBtn').style.display = '';
+    document.getElementById('resetAfterBtn').style.display = 'none';
+    document.getElementById('exportBtn').disabled = true;
+    resetStageTicks();
+
+    const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+    await fetch('/Export?handler=Run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
+      body: JSON.stringify({ ...payload, jobId: currentJobId })
+    });
+  }
+
+  async function cancelJob() {
+    if (!currentJobId) return;
+    await fetch('/Export?handler=Cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value },
+      body: JSON.stringify({ jobId: currentJobId })
+    });
+  }
+
+  async function setupSignalR(jobId) {
+    if (connection) { try { await connection.stop(); } catch {} }
+    connection = new signalR.HubConnectionBuilder()
+      .withUrl('/progressHub').withAutomaticReconnect().build();
+    connection.on('progress', (msg) => {
+      updateProgress(msg);
+      if (msg.isComplete || msg.isError) onJobEnd(msg);
+    });
+    await connection.start();
+    await connection.invoke('JoinJob', jobId);
+  }
+
+  function updateProgress(msg) {
+    const pct = msg.percent || 0;
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = Math.round(pct) + '%';
+    document.getElementById('progressStage').textContent = msg.message || '';
+    if (msg.rowsDone > 0) {
+      document.getElementById('progressRows').textContent =
+        msg.rowsDone.toLocaleString() + (msg.rowsTotal > 0 ? ' / ' + msg.rowsTotal.toLocaleString() : '') + ' rows';
     }
+    const stage = (msg.stage || '').toLowerCase();
+    if (stage.includes('count') || pct > 5)  advanceStage('stg-parse');
+    if (stage.includes('fetch') || pct > 15) advanceStage('stg-stream');
+    if (stage.includes('writ') || pct > 80)  advanceStage('stg-write');
+  }
 
-    function buildPayload() {
-        const isView = document.querySelector('input[name="sourceType"]:checked').value === 'view';
-        return {
-            connectionString: document.getElementById('connStr').value,
-            queryOrView:      isView ? document.getElementById('viewName').value
-                                     : document.getElementById('sqlQuery').value,
-            isRawQuery:       !isView,
-            outputFolder:     document.getElementById('outputFolder').value,
-            filePrefix:       document.getElementById('filePrefix').value,
-            sheetName:        document.getElementById('sheetName').value,
-            maxRowsPerFile:   parseInt(document.getElementById('maxRows').value),
-            isDryRun:         isDryRun,
-        };
+  function advanceStage(id) {
+    const row  = document.getElementById(id);
+    const tick = row?.querySelector('.stage-tick');
+    if (!tick || tick.classList.contains('is-active') || tick.querySelector('svg')) return;
+    document.querySelectorAll('.stage-tick.is-active').forEach(t => {
+      t.classList.remove('is-active');
+      t.innerHTML = '<svg width="12" height="12"><use href="#ic-check"/></svg>';
+      const te = t.closest('.stage-row')?.querySelector('.stage-time');
+      if (te) te.textContent = ((Date.now() - jobStartTime) / 1000).toFixed(1) + 's';
+    });
+    tick.classList.remove('is-pending');
+    tick.classList.add('is-active');
+    tick.innerHTML = '<span style="width:6px;height:6px;background:currentColor;border-radius:50%;display:inline-block"></span>';
+  }
+
+  function resetStageTicks() {
+    ['stg-parse','stg-stream','stg-write'].forEach(id => {
+      const tick = document.getElementById(id)?.querySelector('.stage-tick');
+      if (tick) { tick.className = 'stage-tick is-pending'; tick.innerHTML = '<span style="font-size:11px">·</span>'; }
+      const t = document.getElementById(id + '-t');
+      if (t) t.textContent = '—';
+    });
+  }
+
+  function onJobEnd(msg) {
+    const elapsed = ((Date.now() - jobStartTime) / 1000).toFixed(1) + 's';
+    const ok = msg.isComplete && !msg.isError;
+    const bar = document.getElementById('progressBar');
+    bar.style.width = '100%';
+    bar.className = 'progress-fill ' + (ok ? 'is-success' : 'is-error');
+
+    document.querySelectorAll('.stage-tick.is-active,.stage-tick.is-pending').forEach(t => {
+      if (ok) {
+        t.classList.remove('is-active','is-pending');
+        t.innerHTML = '<svg width="12" height="12"><use href="#ic-check"/></svg>';
+      }
+      const te = t.closest('.stage-row')?.querySelector('.stage-time');
+      if (te && te.textContent === '—') te.textContent = elapsed;
+    });
+
+    document.getElementById('progressTitle').textContent = ok ? 'Export complete' : 'Export failed';
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('resetAfterBtn').style.display = '';
+    document.getElementById('exportBtn').disabled = false;
+
+    if (ok) {
+      document.getElementById('lastRunBadge').className = 'badge badge-success';
+      document.getElementById('lastRunBadge').innerHTML = '<span class="badge-dot"></span> Success';
+      const prefix = document.getElementById('filePrefix').value || 'export';
+      document.getElementById('lastRunMeta').textContent = 'Just now · ' + prefix + '_part01.xlsx';
+      document.getElementById('lr-rows').textContent     = msg.rowsDone ? msg.rowsDone.toLocaleString() : '—';
+      document.getElementById('lr-files').textContent    = '1';
+      document.getElementById('lr-size').textContent     = '—';
+      document.getElementById('lr-duration').textContent = elapsed;
+      document.getElementById('lastRunGrid').style.display = '';
+
+      const tbody = document.getElementById('recentBody');
+      const emptyRow = tbody.querySelector('[colspan]');
+      if (emptyRow) emptyRow.parentElement.remove();
+      const tr = document.createElement('tr');
+      const fname = (prefix || 'export') + '_part01.xlsx';
+      tr.innerHTML = `<td><span class="mono text-sm">${fname}</span></td>
+                      <td class="muted text-sm">Just now</td>
+                      <td style="text-align:right">${msg.rowsDone ? msg.rowsDone.toLocaleString() : '—'}</td>`;
+      tbody.prepend(tr);
     }
+    setPill(ok ? 'ok' : 'error', ok ? 'Connected' : 'Error');
+  }
 
-    async function dryRun()   { isDryRun = true;  await startExport(); isDryRun = false; }
-    async function startExport() {
-        const payload = buildPayload();
-        if (!payload.connectionString || !payload.queryOrView || !payload.outputFolder) {
-            alert('Please fill in Connection String, View/Query, and Output Folder.'); return;
-        }
-
-        currentJobId = crypto.randomUUID();
-        await setupSignalR(currentJobId);
-
-        document.getElementById('progressSection').style.display = '';
-        document.getElementById('resultSection').style.display   = 'none';
-        document.getElementById('progressLog').innerHTML          = '';
-        document.getElementById('exportBtn').style.display        = 'none';
-        document.getElementById('cancelBtn').style.display        = '';
-        setProgress(0, 'Starting…');
-
-        const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
-        await fetch('/Export?handler=Run', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': token },
-            body: JSON.stringify({ ...payload, jobId: currentJobId })
-        });
-    }
-
-    async function cancelJob() {
-        if (!currentJobId) return;
-        await fetch('/Export?handler=Cancel', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json',
-                       'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value },
-            body: JSON.stringify({ jobId: currentJobId })
-        });
-    }
-
-    async function setupSignalR(jobId) {
-        if (connection) await connection.stop();
-        connection = new signalR.HubConnectionBuilder()
-            .withUrl('/progressHub')
-            .withAutomaticReconnect()
-            .build();
-
-        connection.on('progress', (msg) => {
-            setProgress(msg.percent, msg.message);
-            appendLog(msg.message, msg.isError);
-
-            if (msg.isComplete || msg.isError) {
-                document.getElementById('exportBtn').style.display = '';
-                document.getElementById('cancelBtn').style.display = 'none';
-            }
-        });
-
-        await connection.start();
-        await connection.invoke('JoinJob', jobId);
-    }
-
-    function setProgress(pct, label) {
-        document.getElementById('progressBar').style.width = pct + '%';
-        document.getElementById('progressStatus').textContent = label;
-    }
-
-    function appendLog(msg, isError) {
-        const log  = document.getElementById('progressLog');
-        const line = document.createElement('div');
-        line.className   = isError ? 'log-error' : 'log-line';
-        line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
-        log.appendChild(line);
-        log.scrollTop = log.scrollHeight;
-    }
+  function resetProgress() { document.getElementById('progressSection').style.display = 'none'; }
+  function resetForm() {
+    document.getElementById('connString').value = '';
+    document.getElementById('sqlQuery').value   = '';
+    document.getElementById('viewName').value   = '';
+    showConnHelper('neutral', 'Enter your SQL Server connection string above.');
+    setPill('unknown', 'Not tested');
+    resetProgress();
+    if (isDryRun) toggleDryRun();
+  }
 </script>
 }
