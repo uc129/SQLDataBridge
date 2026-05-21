@@ -28,6 +28,44 @@
   --radius-input: 6px;
 }
 
+/* ===== Global loader bar ===== */
+.global-loader {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  overflow: hidden;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.global-loader.is-active { opacity: 1; }
+.global-loader::before,
+.global-loader::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  background: var(--blue-500);
+  will-change: left, right;
+}
+.global-loader::before {
+  animation: _gl-long 2.1s cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
+}
+.global-loader::after {
+  animation: _gl-short 2.1s cubic-bezier(0.165, 0.84, 0.44, 1.0) infinite;
+  animation-delay: 1.15s;
+}
+@keyframes _gl-long {
+  0%   { left: -35%;  right: 100%; }
+  60%  { left: 100%;  right: -90%; }
+  100% { left: 100%;  right: -90%; }
+}
+@keyframes _gl-short {
+  0%   { left: -200%; right: 100%; }
+  60%  { left: 107%;  right:  -8%; }
+  100% { left: 107%;  right:  -8%; }
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #E9EEF6; }
 body {
@@ -332,6 +370,14 @@ a { text-decoration: none; }
 .badge-muted   { background: #ECEEF2; color: #8595A8; }
 .badge-info    { background: var(--blue-100); color: var(--navy-700); }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
+.admin-only-badge {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 999px;
+  background: #fef3c7; color: #92400e;
+  letter-spacing: 0.02em; vertical-align: middle;
+  margin-left: 5px;
+}
 
 /* ===== Tool grid (hub) ===== */
 .tool-grid {

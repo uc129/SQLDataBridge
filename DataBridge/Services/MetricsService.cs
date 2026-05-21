@@ -7,7 +7,7 @@ namespace DataBridge.Services;
 public class MetricsService(IConfiguration config)
 {
     private static readonly string[] Tables =
-        ["FNATool_DataBridge1", "FNATool_DataBridge2", "FNATool_DataBridge3"];
+        ["FNATool_VendorDetailsPipeline_1", "FNATool_VendorDetailsPipeline_2", "FNATool_VendorDetailsPipeline_3"];
 
     public async Task<DashboardMetrics> GetDashboardAsync()
     {

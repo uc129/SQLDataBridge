@@ -1,0 +1,30 @@
+@page
+@model DataBridge.Pages.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access Denied";
+    Layout = "_Layout";
+}
+
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Access Denied</h1>
+    <div class="sub">You do not have access to DataBridge</div>
+  </div>
+</div>
+
+<div class="page">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:50vh;text-align:center">
+    <div style="width:64px;height:64px;border-radius:50%;background:#fee2e2;display:grid;place-items:center;margin-bottom:24px">
+      <svg width="28" height="28" style="color:#dc2626" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <h2 style="margin:0 0 8px">Access Denied</h2>
+    <p style="color:var(--text-muted);max-width:400px;line-height:1.6">
+      Your account is not registered in DataBridge or has been deactivated.
+      Contact your administrator to request access.
+    </p>
+    <a class="btn btn-secondary" style="margin-top:24px" href="/MicrosoftIdentity/Account/SignOut">Sign out</a>
+    <a class="btn btn-secondary" style="margin-top:12px" href="/ProxyLogin">Proxy Login</a>
+  </div>
+</div>

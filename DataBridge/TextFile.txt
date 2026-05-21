@@ -1,0 +1,122 @@
+﻿
+You are planning the architecture and migration strategy for a .NET 8 ASP.NET Core 
+Razor Pages application being converted to a Web API + DDD Onion Architecture.
+
+## Your Task
+Analyze the existing codebase, then produce:
+1. A target architecture definition
+2. A phased migration plan with concrete steps
+3. A project/folder structure scaffold
+4. A list of decisions and trade-offs the developer must make
+
+Do NOT generate implementation code yet. This is a planning phase only.
+
+---
+
+## Existing Stack
+- ASP.NET Core .NET 8 Razor Pages (being decommissioned as the presentation layer)
+- Dapper (no Entity Framework - keep it)
+- SQL Server
+- Azure services (identify which ones are used by reading the codebase)
+- ASP.NET Core Identity + JWT auth
+
+## Target Architecture
+Onion Architecture with 4 layers, enforced via separate .csproj projects:
+src/
+YourApp.Domain/           # Innermost - no dependencies
+YourApp.Application/      # Depends on Domain only
+YourApp.Infrastructure/   # Depends on Application + Domain
+YourApp.Api/              # Depends on Application only (NOT Infrastructure directly)
+
+
+---
+
+## Step 1 — Codebase Analysis
+Before producing anything, read the existing project structure and:
+- List all existing Razor Pages (PageModel classes)
+- List all entities and data models
+- Identify all external dependencies (Azure service clients, HTTP clients, etc.)
+- Identify how auth is currently wired (cookie-based Identity vs JWT)
+- Identify where business logic currently lives (PageModel, service classes, inline SQL)
+- Flag any Razor Pages that are doing too much (fat PageModels)
+
+Output this as a structured "Current State" report.
+
+---
+
+## Step 2 — Domain Modeling
+Based on the entities found:
+- Propose bounded contexts (group entities that belong together)
+- Identify which entities should be Aggregates vs. plain domain objects
+- Flag any anemic domain models (entities with no behavior, just properties)
+- For each bounded context, propose the core domain interfaces 
+  (e.g., IOrderRepository, IOrderService)
+
+Keep domain interfaces in Domain or Application. 
+Implementations go in Infrastructure.
+
+---
+
+## Step 3 — Layer Responsibility Map
+
+For each layer, produce a table of:
+- What goes there
+- What does NOT go there
+- Concrete examples from this codebase
+
+Pay special attention to:
+- Dapper query classes → these belong in Infrastructure, behind repository interfaces defined in Application
+- SQL connection management → Infrastructure only, injected via IDbConnectionFactory
+- Azure service clients (Blob, Service Bus, etc.) → Infrastructure, behind interfaces
+- JWT generation/validation → Infrastructure (token service) + Api (middleware config)
+- ASP.NET Core Identity → split: user domain object in Domain, UserManager wiring in Infrastructure, JWT issuance in Infrastructure
+
+---
+
+## Step 4 — Migration Strategy (Phased)
+
+Propose a phased migration. Do NOT suggest a big-bang rewrite. Each phase should:
+- Be independently deployable
+- Leave the app functional at the end of the phase
+- Have a clear "done" definition
+
+Suggested phase structure (adapt based on codebase findings):
+- Phase 0: Restructure into solution folders without breaking anything
+- Phase 1: Extract Domain layer (entities, interfaces, no implementations)
+- Phase 2: Extract Application layer (use cases / service interfaces)
+- Phase 3: Extract Infrastructure layer (Dapper repos, Azure clients, auth)
+- Phase 4: Build the Web API layer (controllers, DTOs, JWT middleware)
+- Phase 5: Decommission Razor Pages
+
+For each phase, list:
+- Files to move / create / delete
+- Dependency injection changes
+- Risk level (Low / Medium / High) and why
+
+---
+
+## Step 5 — Open Decisions
+
+List all architectural decisions the developer must explicitly make before 
+implementation begins. Format as:
+
+Decision: [title]
+Options: [A] vs [B] (vs [C] if applicable)
+Recommendation: [your recommendation]
+Reason: [one sentence]
+
+Cover at minimum:
+- CQRS vs plain service layer in Application (given Dapper is already query-friendly)
+- MediatR vs manual dispatch for use cases
+- Whether to introduce a Result<T> / error handling pattern or use exceptions
+- DTOs: generate at Application layer or Api layer
+- Auth: single JWT issuer in this API or delegate to Azure AD / external IdP
+- Versioning strategy for the new API
+
+---
+
+## Output Format
+Produce a single ARCHITECTURE.md file structured with the sections above.
+Be specific — reference actual class names, file paths, and patterns found 
+in the codebase. Avoid generic DDD boilerplate that doesn't reflect 
+what's actually in this project.

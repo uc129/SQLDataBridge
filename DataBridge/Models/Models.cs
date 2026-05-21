@@ -55,6 +55,7 @@ public class ProgressMessage
     public long   RowsTotal  { get; set; } = 0;
     public bool   IsError    { get; set; } = false;
     public bool   IsComplete { get; set; } = false;
+    public List<string>? OutputFiles { get; set; }
 }
 
 public class JobResult

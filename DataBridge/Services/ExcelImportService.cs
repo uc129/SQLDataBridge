@@ -149,6 +149,107 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
         return result;
     }
 
+    // ── Public pipeline helpers ────────────────────────────────────
+
+    /// Scans all files, merges schemas, and returns a fully-populated DataTable
+    /// with sanitized column names — without touching SQL.
+    public async Task<(List<string> Columns, DataTable Data)> BuildMergedDataTableAsync(
+        List<(string FileName, Stream Stream)> files, CancellationToken ct)
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        var allColumns = new List<string>();
+        var seenCols   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var snapshots  = new List<(string FileName, byte[] Data)>();
+
+        // Pass 1: read + cache file bytes, collect unique column names from headers
+        foreach (var (fileName, stream) in files)
+        {
+            var data = await ReadStreamAsync(stream);
+            snapshots.Add((fileName, data));
+
+            using var ms     = new MemoryStream(data);
+            using var reader = ExcelReaderFactory.CreateReader(ms);
+            var ds = reader.AsDataSet(new ExcelDataSetConfiguration
+            {
+                ConfigureDataTable = _ => new ExcelDataTableConfiguration
+                {
+                    UseHeaderRow  = true,
+                    ReadHeaderRow = _ => { }
+                },
+                UseColumnDataType = false
+            });
+            foreach (DataTable t in ds.Tables)
+            {
+                foreach (DataColumn col in t.Columns)
+                {
+                    var safe = SafeColumnName(col.ColumnName);
+                    if (!string.IsNullOrWhiteSpace(safe) && seenCols.Add(safe))
+                        allColumns.Add(safe);
+                }
+                break;
+            }
+        }
+
+        // Build merged DataTable schema
+        var merged = new DataTable();
+        foreach (var col in allColumns)
+            merged.Columns.Add(col, typeof(string));
+
+        // Pass 2: load full data and populate merged DataTable
+        foreach (var (_, data) in snapshots)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            using var ms     = new MemoryStream(data);
+            using var reader = ExcelReaderFactory.CreateReader(ms);
+            var ds = reader.AsDataSet(new ExcelDataSetConfiguration
+            {
+                ConfigureDataTable = _ => new ExcelDataTableConfiguration
+                {
+                    UseHeaderRow          = true,
+                    EmptyColumnNamePrefix = "col_"
+                },
+                UseColumnDataType = false
+            });
+
+            var src    = ds.Tables[0];
+            var colMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn col in src.Columns)
+                colMap[col.ColumnName] = SafeColumnName(col.ColumnName);
+
+            foreach (DataRow srcRow in src.Rows)
+            {
+                var newRow = merged.NewRow();
+                foreach (DataColumn srcCol in src.Columns)
+                {
+                    if (colMap.TryGetValue(srcCol.ColumnName, out var safeName) && merged.Columns.Contains(safeName))
+                    {
+                        var val = srcRow[srcCol];
+                        newRow[safeName] = val == DBNull.Value || val == null ? (object)DBNull.Value : val.ToString()!;
+                    }
+                }
+                merged.Rows.Add(newRow);
+            }
+        }
+
+        return (allColumns, merged);
+    }
+
+    /// Drops/recreates (or extends) the staging table and bulk-inserts the DataTable.
+    public async Task UploadDataTableAsync(
+        SqlConnection conn, string schemaName, string tableName, bool replaceTable,
+        DataTable dt, string jobId, CancellationToken ct)
+    {
+        var qualifiedTable = $"[{schemaName}].[{tableName}]";
+        var columns = dt.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+        if (replaceTable)
+            await DropAndCreateTableAsync(conn, schemaName, tableName, columns, ct);
+        else
+            await EnsureColumnsExistAsync(conn, schemaName, tableName, columns, ct);
+        await BulkInsertAsync(conn, qualifiedTable, dt, "pipeline", jobId, ct);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────
 
     private static async Task<byte[]> ReadStreamAsync(Stream s)
@@ -158,7 +259,7 @@ public class ExcelImportService(IHubContext<ProgressHub> hub)
         return ms.ToArray();
     }
 
-    private static string SafeColumnName(string name)
+    public static string SafeColumnName(string name)
     {
         var safe = Regex.Replace(name ?? "", @"[^0-9a-zA-Z_]", "_").Trim('_').ToLower();
         if (string.IsNullOrEmpty(safe)) return "col";

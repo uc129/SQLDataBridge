@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build *)",
-      "WebFetch(domain:api.anthropic.com)"
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(findstr /V \"MSB3026\\\\|MSB3027\\\\|MSB3021\\\\|retry\\\\|locked\\\\|DataBridge.exe\")"
     ]
   }
 }

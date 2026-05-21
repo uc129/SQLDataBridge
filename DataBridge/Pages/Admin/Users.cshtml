@@ -1,0 +1,134 @@
+@page
+@model DataBridge.Pages.Admin.UsersModel
+@{
+    ViewData["Title"] = "User Management";
+    ViewData["ActivePage"] = "admin-users";
+    var avatarInitials = string.Concat(
+        (User.FindFirstValue("DataBridgeDisplayName") ?? "")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .Take(2).Select(w => char.ToUpper(w[0])));
+}
+
+@* ── Topbar ───────────────────────────────────────────────────── *@
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>User Management</h1>
+    <div class="sub">Control who can access DataBridge</div>
+  </div>
+  <div class="topbar-right">
+    <div class="tb-avatar">@avatarInitials</div>
+  </div>
+</div>
+
+@* ── Page content ─────────────────────────────────────────────── *@
+<div class="page">
+
+  @* ── Add User form ────────────────────────────────────────────── *@
+  <div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:24px">
+    <div style="font-weight:600;font-size:14px;margin-bottom:16px">Add New User</div>
+
+    @if (!ModelState.IsValid)
+    {
+        <div style="color:#dc2626;background:#fee2e2;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px">
+          @foreach (var e in ModelState.Values.SelectMany(v => v.Errors))
+          { <div>@e.ErrorMessage</div> }
+        </div>
+    }
+
+    <form method="post" asp-page-handler="Add" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:12px;font-weight:500;color:var(--text-muted)" asp-for="NewEmail">Email / UPN</label>
+        <input asp-for="NewEmail" class="form-input" placeholder="user@larsentoubro.com" style="width:280px" />
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:12px;font-weight:500;color:var(--text-muted)" asp-for="NewDisplayName">Display Name</label>
+        <input asp-for="NewDisplayName" class="form-input" placeholder="Full Name" style="width:200px" />
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:12px;font-weight:500;color:var(--text-muted)" asp-for="NewRoleId">Role</label>
+        <select asp-for="NewRoleId" class="form-input">
+          <option value="">Select role…</option>
+          @foreach (var r in Model.Roles)
+          {
+              <option value="@r.Id">@r.RoleName</option>
+          }
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Add User</button>
+    </form>
+  </div>
+
+  @* ── Users table ──────────────────────────────────────────────── *@
+  <div style="background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <div style="padding:14px 20px;font-weight:600;font-size:14px;border-bottom:1px solid var(--border)">
+      Users (@Model.Users.Count())
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:var(--bg)">
+          <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Name</th>
+          <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Email</th>
+          <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Role</th>
+          <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Status</th>
+          <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Added</th>
+          <th style="padding:10px 16px;text-align:right;font-size:12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border)">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @foreach (var u in Model.Users)
+        {
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:12px 16px;font-weight:500;font-size:14px">@u.DisplayName</td>
+              <td style="padding:12px 16px;font-size:13px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">@u.Email</td>
+              <td style="padding:12px 16px">
+                @if (u.RoleCode == "Admin")
+                {
+                    <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;background:#fef3c7;color:#92400e">@u.RoleName</span>
+                }
+                else
+                {
+                    <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;background:#dbeafe;color:#1e40af">@u.RoleName</span>
+                }
+              </td>
+              <td style="padding:12px 16px">
+                @if (u.IsActive)
+                {
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;background:#dcfce7;color:#166534">
+                      <span style="width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>Active
+                    </span>
+                }
+                else
+                {
+                    <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;background:#f1f5f9;color:#64748b">Inactive</span>
+                }
+              </td>
+              <td style="padding:12px 16px;font-size:13px;color:var(--text-muted)">@u.CreatedAt.ToString("yyyy-MM-dd")</td>
+              <td style="padding:12px 16px;text-align:right;white-space:nowrap">
+                <form method="post" style="display:inline">
+                  <input type="hidden" name="id" value="@u.Id" />
+                  <input type="hidden" name="isActive" value="@(!u.IsActive)" />
+                  <button asp-page-handler="Toggle" class="btn btn-secondary" style="font-size:12px;padding:5px 12px">
+                    @(u.IsActive ? "Deactivate" : "Activate")
+                  </button>
+                </form>
+                <form method="post" style="display:inline;margin-left:6px"
+                      onsubmit="return confirm('Delete @(u.DisplayName)? This cannot be undone.')">
+                  <input type="hidden" name="id" value="@u.Id" />
+                  <button asp-page-handler="Delete" class="btn" style="font-size:12px;padding:5px 12px;background:#fee2e2;color:#dc2626;border-color:#fca5a5">Delete</button>
+                </form>
+              </td>
+            </tr>
+        }
+        @if (!Model.Users.Any())
+        {
+            <tr>
+              <td colspan="6" style="padding:32px 16px;text-align:center;color:var(--text-muted);font-size:14px">
+                No users registered yet.
+              </td>
+            </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+</div>

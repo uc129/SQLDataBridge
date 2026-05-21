@@ -12,14 +12,17 @@
     <div class="sub">Excel → SQL staging table, in one shot.</div>
   </div>
   <div class="topbar-right">
-    <span class="conn-pill is-unknown" id="connPill">
-      <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
-      <span id="connPillText">Not tested</span>
-    </span>
+    @if (User.IsInRole("Admin"))
+    {
+        <span class="conn-pill is-unknown" id="connPill">
+          <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
+          <span id="connPillText">Not tested</span>
+        </span>
+    }
     <button class="tb-icon-btn" title="Notifications">
       <svg width="18" height="18"><use href="#ic-bell"/></svg>
     </button>
-    <div class="tb-avatar">UC</div>
+    <div class="tb-avatar">@(string.Concat((User.FindFirstValue("DataBridgeDisplayName") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpper(w[0]))))</div>
   </div>
 </div>
 
@@ -68,19 +71,22 @@
 
       @Html.AntiForgeryToken()
 
-      @* Connection string *@
-      <div class="field">
-        <label class="label">Connection string</label>
-        <div class="conn-wrap">
-          <input class="input mono" id="connString" type="password"
-                 placeholder="Server=...;Database=...;User ID=...;Password=..."
-                 autocomplete="off" />
-          <button class="btn btn-secondary btn-sm test-inline" onclick="testConnection()" id="testBtn">
-            Test Connection
-          </button>
-        </div>
-        <div id="connHelper" class="helper">Enter your SQL Server connection string above.</div>
-      </div>
+      @* Connection string — Admin only *@
+      @if (User.IsInRole("Admin"))
+      {
+          <div class="field">
+            <label class="label">Connection string <span class="admin-only-badge">Admin</span></label>
+            <div class="conn-wrap">
+              <input class="input mono" id="connString" type="password"
+                     placeholder="Server=...;Database=...;User ID=...;Password=..."
+                     autocomplete="off" />
+              <button class="btn btn-secondary btn-sm test-inline" onclick="testConnection()" id="testBtn">
+                Test Connection
+              </button>
+            </div>
+            <div id="connHelper" class="helper">Leave blank to use the server default connection.</div>
+          </div>
+      }
 
       @* File drop zone *@
       <div class="field">
@@ -106,17 +112,24 @@
       @* Table + load mode *@
       <div class="field-row cols-2">
         <div class="field">
-          <label class="label">Target table</label>
-          <div style="position:relative">
-            <select class="select" id="tableName" style="appearance:none;padding-right:32px">
-              <option value="FNATool_DataBridge1">FNATool_DataBridge1</option>
-              <option value="FNATool_DataBridge2">FNATool_DataBridge2</option>
-              <option value="FNATool_DataBridge3">FNATool_DataBridge3</option>
-            </select>
-            <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none">
-              <use href="#ic-chevron-d"/>
-            </svg>
-          </div>
+          <label class="label">Target table @if (User.IsInRole("Admin")) { <span class="admin-only-badge">Admin</span> }</label>
+          @if (User.IsInRole("Admin"))
+          {
+              <input class="input mono" id="tableName" placeholder="e.g. FNATool_QuickImport_1" />
+          }
+          else
+          {
+              <div style="position:relative">
+                <select class="select" id="tableName" style="appearance:none;padding-right:32px">
+                  <option value="FNATool_QuickImport_1">FNATool_QuickImport_1</option>
+                  <option value="FNATool_QuickImport_2">FNATool_QuickImport_2</option>
+                  <option value="FNATool_QuickImport_3">FNATool_QuickImport_3</option>
+                </select>
+                <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none">
+                  <use href="#ic-chevron-d"/>
+                </svg>
+              </div>
+          }
         </div>
 
         <div class="field">
@@ -230,6 +243,7 @@
 
 @section Scripts {
 <script>
+  const isAdmin     = @(User.IsInRole("Admin") ? "true" : "false");
   let connection    = null;
   let currentJobId  = null;
   let selectedFiles = new DataTransfer();
@@ -353,8 +367,7 @@
     if (selectedFiles.files.length === 0) {
       alert('Please select at least one Excel file.'); return;
     }
-    const cs = document.getElementById('connString').value.trim();
-    if (!cs) { alert('Please enter a connection string.'); return; }
+    showLoader();
 
     currentJobId = crypto.randomUUID();
     jobStartTime = Date.now();
@@ -378,6 +391,7 @@
     formData.append('tableName', document.getElementById('tableName').value);
     formData.append('schemaName', 'dbo');
     formData.append('replaceTable', loadMode === 'drop');
+    if (isAdmin) formData.append('connectionString', document.getElementById('connString')?.value.trim() ?? '');
     formData.append('__RequestVerificationToken',
       document.querySelector('input[name="__RequestVerificationToken"]').value);
     for (const f of selectedFiles.files) formData.append('files', f);
@@ -456,6 +470,7 @@
   }
 
   function onJobEnd(msg) {
+    hideLoader();
     const elapsed = ((Date.now() - jobStartTime) / 1000).toFixed(1) + 's';
     const ok = msg.isComplete && !msg.isError;
     const bar = document.getElementById('progressBar');
@@ -508,9 +523,11 @@
   function resetForm() {
     selectedFiles = new DataTransfer();
     renderFileList();
-    document.getElementById('connString').value = '';
-    showConnHelper('neutral', 'Enter your SQL Server connection string above.');
-    setPill('unknown', 'Not tested');
+    if (isAdmin) {
+      document.getElementById('connString').value = '';
+      showConnHelper('neutral', 'Leave blank to use the server default connection.');
+      setPill('unknown', 'Not tested');
+    }
     resetProgress();
   }
 </script>

@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 
 namespace DataBridge.Pages;
 
 [ApiController]
+[Authorize]
 [Route("api")]
 public class ApiController(IConfiguration config) : ControllerBase
 {

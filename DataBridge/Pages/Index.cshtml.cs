@@ -1,9 +1,11 @@
 using DataBridge.Models;
 using DataBridge.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace DataBridge.Pages;
 
+[Authorize]
 public class IndexModel(MetricsService metricsService) : PageModel
 {
     public DashboardMetrics? Metrics { get; private set; }
