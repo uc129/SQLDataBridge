@@ -1,0 +1,104 @@
+@page
+@model DataBridge.Api.Pages.Admin.UsersModel
+@{
+    ViewData["Title"] = "User Management";
+}
+
+<div class="page-head">
+    <div>
+        <h2 class="page-title">User Management</h2>
+        <p class="page-sub">Manage access and roles for DataBridge users.</p>
+    </div>
+</div>
+
+<div class="two-col">
+    <div class="card">
+        <div class="card-pad" style="padding-bottom:0">
+            <div class="card-head">
+                <h3>Users</h3>
+            </div>
+        </div>
+        <table class="t">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>PSNO</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.Users)
+                {
+                    <tr>
+                        <td style="font-weight:600">@u.DisplayName</td>
+                        <td class="muted text-sm">@u.Email</td>
+                        <td>
+                            <span class="badge @(u.RoleCode == "Admin" ? "badge-warn" : "badge-muted")">@u.RoleCode</span>
+                        </td>
+                        <td class="mono text-sm">@u.PSNO</td>
+                        <td>
+                            <form method="post" asp-page-handler="Toggle" style="display:inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@u.Id" />
+                                <input type="hidden" name="isActive" value="@(!u.IsActive)" />
+                                <button type="submit" class="btn btn-sm @(u.IsActive ? "badge-success" : "badge-muted")"
+                                        style="border:1px solid @(u.IsActive ? "var(--green-600)" : "var(--border)"); background:@(u.IsActive ? "var(--green-50)" : "#ECEEF2"); color:@(u.IsActive ? "var(--green-600)" : "#8595A8"); font-size:11px; height:26px; padding:0 10px; border-radius:999px;">
+                                    @(u.IsActive ? "Active" : "Inactive")
+                                </button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="post" asp-page-handler="Delete" style="display:inline"
+                                  onsubmit="return confirm('Delete @u.DisplayName?')">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@u.Id" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card card-pad">
+        <div class="card-head">
+            <h3>Add User</h3>
+        </div>
+
+        @if (!ModelState.IsValid)
+        {
+            <div class="alert alert-danger" style="margin-bottom:14px">
+                @foreach (var err in ModelState.Values.SelectMany(v => v.Errors))
+                {
+                    <div>@err.ErrorMessage</div>
+                }
+            </div>
+        }
+
+        <form method="post" asp-page-handler="Add">
+            @Html.AntiForgeryToken()
+            <div class="field">
+                <label class="label">Email</label>
+                <input name="email" type="email" class="input" required />
+            </div>
+            <div class="field">
+                <label class="label">Display Name</label>
+                <input name="displayName" type="text" class="input" required />
+            </div>
+            <div class="field">
+                <label class="label">Role</label>
+                <select name="roleId" class="select" required>
+                    @foreach (var r in Model.Roles)
+                    {
+                        <option value="@r.Id">@r.RoleName</option>
+                    }
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block mt-8">Add User</button>
+        </form>
+    </div>
+</div>

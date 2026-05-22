@@ -1,0 +1,530 @@
+@page
+@model DataBridge.Api.Pages.ImportModel
+@{
+    ViewData["Title"] = "Quick Import";
+    ViewData["ActivePage"] = "import";
+}
+
+@* ── Topbar ───────────────────────────────────────────────────── *@
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Quick Import</h1>
+    <div class="sub">Excel → SQL staging table, in one shot.</div>
+  </div>
+  <div class="topbar-right">
+    @if (User.IsInRole("Admin"))
+    {
+        <span class="conn-pill is-unknown" id="connPill">
+          <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
+          <span id="connPillText">Not tested</span>
+        </span>
+    }
+    <button class="tb-icon-btn" title="Notifications">
+      <svg width="18" height="18"><use href="#ic-bell"/></svg>
+    </button>
+    <div class="tb-avatar">@(string.Concat((User.FindFirstValue("DataBridgeDisplayName") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpper(w[0]))))</div>
+  </div>
+</div>
+
+@* ── Page content ─────────────────────────────────────────────── *@
+<div class="page">
+
+  @* Page header *@
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Quick Import</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#5B6CCB">
+          <svg width="20" height="20"><use href="#ic-upload"/></svg>
+        </div>
+        Quick Import
+      </h1>
+      <p class="page-sub">Upload an Excel workbook and stage it to SQL. No transforms — use Pipeline if you need to clean first.</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-secondary" onclick="resetForm()">
+        <svg width="14" height="14"><use href="#ic-refresh"/></svg> Reset
+      </button>
+    </div>
+  </div>
+
+  @* Two-column layout *@
+  <div class="two-col">
+
+    @* ── Left: config card ──────────────────────────────── *@
+    <div class="card card-pad">
+      <div class="card-head">
+        <div>
+          <h3>
+            <span style="width:26px;height:26px;border-radius:6px;background:#E8EBF8;color:#5B6CCB;display:grid;place-items:center">
+              <svg width="14" height="14"><use href="#ic-upload"/></svg>
+            </span>
+            Configure import
+          </h3>
+          <div class="sub">All fields are required before kicking the job off.</div>
+        </div>
+      </div>
+
+      @Html.AntiForgeryToken()
+
+      @* Connection string — Admin only *@
+      @if (User.IsInRole("Admin"))
+      {
+          <div class="field">
+            <label class="label">Connection string <span class="admin-only-badge">Admin</span></label>
+            <div class="conn-wrap">
+              <input class="input mono" id="connString" type="password"
+                     placeholder="Server=...;Database=...;User ID=...;Password=..."
+                     autocomplete="off" />
+              <button class="btn btn-secondary btn-sm test-inline" onclick="testConnection()" id="testBtn">
+                Test Connection
+              </button>
+            </div>
+            <div id="connHelper" class="helper">Leave blank to use the server default connection.</div>
+          </div>
+      }
+
+      @* File drop zone *@
+      <div class="field">
+        <label class="label">Source files</label>
+        <div class="dropzone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <div class="dropzone-icon">
+            <svg width="20" height="20"><use href="#ic-upload"/></svg>
+          </div>
+          <div><strong>Drag &amp; drop .xlsx / .xls files here</strong></div>
+          <div class="hint">or click to browse · multi-file supported · 500 MB cap</div>
+        </div>
+        <div class="dropzone is-filled" id="filesFilled" style="display:none">
+          <div id="fileList"></div>
+          <button class="btn btn-ghost btn-sm mt-12" style="width:100%"
+                  onclick="document.getElementById('fileInput').click()">
+            <svg width="13" height="13"><use href="#ic-plus"/></svg> Add more files
+          </button>
+        </div>
+        <input type="file" id="fileInput" multiple accept=".xlsx,.xls" style="display:none"
+               onchange="handleFiles(this.files)" />
+      </div>
+
+      @* Table + load mode *@
+      <div class="field-row cols-2">
+        <div class="field">
+          <label class="label">Target table @if (User.IsInRole("Admin")) { <span class="admin-only-badge">Admin</span> }</label>
+          @if (User.IsInRole("Admin"))
+          {
+              <input class="input mono" id="tableName" placeholder="e.g. FNATool_QuickImport_1" />
+          }
+          else
+          {
+              <div style="position:relative">
+                <select class="select" id="tableName" style="appearance:none;padding-right:32px">
+                  @foreach (var t in TableWhitelistPolicy.ImportTables.OrderBy(x => x))
+                  {
+                      <option value="@t">@t</option>
+                  }
+                </select>
+                <svg width="14" height="14" style="position:absolute;right:12px;top:12px;color:var(--text-muted);pointer-events:none">
+                  <use href="#ic-chevron-d"/>
+                </svg>
+              </div>
+          }
+        </div>
+
+        <div class="field">
+          <label class="label">Load mode</label>
+          <div class="toggle-group full">
+            <div class="toggle-opt active" id="modeDropBtn" onclick="setMode('drop')">Drop &amp; Recreate</div>
+            <div class="toggle-opt" id="modeAppendBtn" onclick="setMode('append')">Append</div>
+          </div>
+          <div class="helper" id="modeHelper">Existing rows will be replaced.</div>
+        </div>
+      </div>
+
+      @* Mode summary strip *@
+      <div class="switch-row" id="modeSummary" style="background:var(--blue-100);border-color:#C9DDF0">
+        <div>
+          <div class="sw-label" style="color:var(--navy-700)">Ready to import</div>
+          <div class="sw-hint" style="color:var(--navy-700);opacity:0.85" id="modeSummaryText">
+            Select files and configure options above, then click Start Import.
+          </div>
+        </div>
+      </div>
+
+      @* Actions *@
+      <div class="row-between mt-16">
+        <span class="text-sm muted">Schema auto-merges across files · all columns as NVARCHAR(MAX)</span>
+        <button class="btn btn-primary" id="importBtn" onclick="startImport()">
+          <svg width="12" height="12"><use href="#ic-play"/></svg> Start Import
+        </button>
+      </div>
+
+      @* ── Progress (shown after job starts) ───────── *@
+      <div id="progressSection" style="display:none;margin-top:20px">
+        <div class="row-between" style="margin-bottom:8px">
+          <strong style="font-size:13.5px" id="progressTitle">Importing…</strong>
+          <span class="text-sm muted num" id="progressPct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressBar" style="width:0%"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progressStage">Starting…</span>
+          <span id="progressRows"></span>
+        </div>
+
+        <div class="stage-list" id="stageList">
+          <div class="stage-row" id="stg-schema">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Merge schema across files</span>
+            <span class="stage-time" id="stg-schema-t">—</span>
+          </div>
+          <div class="stage-row" id="stg-table">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Prepare target table</span>
+            <span class="stage-time" id="stg-table-t">—</span>
+          </div>
+          <div class="stage-row" id="stg-copy">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Bulk-copy rows</span>
+            <span class="stage-time" id="stg-copy-t">—</span>
+          </div>
+          <div class="stage-row" id="stg-verify">
+            <span class="stage-tick is-pending"><span style="font-size:11px">·</span></span>
+            <span>Verify row count</span>
+            <span class="stage-time" id="stg-verify-t">—</span>
+          </div>
+        </div>
+
+        <div class="row-end mt-12">
+          <button class="btn btn-danger btn-sm" id="cancelBtn" onclick="cancelJob()" style="display:none">Cancel</button>
+          <button class="btn btn-ghost btn-sm" id="resetAfterBtn" onclick="resetProgress()" style="display:none">New import</button>
+        </div>
+      </div>
+
+    </div><!-- /.left card -->
+
+    @* ── Right: stats panels ─────────────────────────── *@
+    <div class="side-stack">
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:12px">
+          <h3 style="font-size:14px">Last import</h3>
+          <span class="badge badge-muted" id="lastRunBadge">No runs yet</span>
+        </div>
+        <div class="text-sm muted" id="lastRunMeta">Run a job to see stats here.</div>
+        <div class="lastrun-grid mt-12" id="lastRunGrid" style="display:none">
+          <div><div class="k">Rows</div><div class="v" id="lr-rows">—</div></div>
+          <div><div class="k">Sheets</div><div class="v" id="lr-sheets">—</div></div>
+          <div><div class="k">Mode</div><div class="v" style="font-size:13px;font-weight:600" id="lr-mode">—</div></div>
+          <div><div class="k">Duration</div><div class="v" id="lr-duration">—</div></div>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="card-head" style="margin-bottom:8px">
+          <h3 style="font-size:14px">Recent imports</h3>
+        </div>
+        <table class="t" id="recentTable">
+          <thead>
+            <tr><th>Table</th><th>When</th><th style="text-align:right">Rows</th></tr>
+          </thead>
+          <tbody id="recentBody">
+            <tr><td colspan="3" style="color:var(--text-muted);font-style:italic;text-align:center">No imports yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div><!-- /.side-stack -->
+
+  </div><!-- /.two-col -->
+</div><!-- /.page -->
+
+@section Scripts {
+<script>
+  const isAdmin     = @(User.IsInRole("Admin") ? "true" : "false");
+  let connection    = null;
+  let currentJobId  = null;
+  let selectedFiles = new DataTransfer();
+  let loadMode      = 'drop';
+  let jobStartTime  = null;
+  let stageProgress = 0;
+
+  // ── File handling
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  function handleFiles(files) {
+    for (const f of files) {
+      if (!f.name.match(/\.xlsx?$/i)) continue;
+      selectedFiles.items.add(f);
+    }
+    renderFileList();
+  }
+
+  function removeFile(index) {
+    const dt = new DataTransfer();
+    [...selectedFiles.files].forEach((f, i) => { if (i !== index) dt.items.add(f); });
+    selectedFiles = dt;
+    renderFileList();
+  }
+
+  function renderFileList() {
+    const list  = document.getElementById('fileList');
+    const empty = document.getElementById('dropZone');
+    const filled = document.getElementById('filesFilled');
+    const count = selectedFiles.files.length;
+
+    if (count === 0) {
+      empty.style.display  = '';
+      filled.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    empty.style.display  = 'none';
+    filled.style.display = '';
+    list.innerHTML = [...selectedFiles.files].map((f, i) => `
+      <div class="file-row" ${i > 0 ? 'style="margin-top:10px"' : ''}>
+        <div class="file-icon"><svg width="18" height="18"><use href="#ic-file-excel"/></svg></div>
+        <div style="min-width:0">
+          <div class="file-name">${f.name}</div>
+          <div class="file-meta">${(f.size/1024/1024).toFixed(1)} MB</div>
+        </div>
+        <button class="file-remove" onclick="removeFile(${i})">
+          <svg width="14" height="14"><use href="#ic-x"/></svg>
+        </button>
+      </div>`).join('');
+    updateSummary();
+  }
+
+  // ── Load mode
+  function setMode(m) {
+    loadMode = m;
+    document.getElementById('modeDropBtn').classList.toggle('active', m === 'drop');
+    document.getElementById('modeAppendBtn').classList.toggle('active', m === 'append');
+    document.getElementById('modeHelper').textContent =
+      m === 'drop' ? 'Existing rows will be replaced.' : 'New rows will be inserted onto existing data.';
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const table = document.getElementById('tableName').value;
+    const count = selectedFiles.files.length;
+    const text = count > 0
+      ? `${count} file${count > 1 ? 's' : ''} → ${table} · ${loadMode === 'drop' ? 'Drop & Recreate' : 'Append'}`
+      : 'Select files and configure options above, then click Start Import.';
+    document.getElementById('modeSummaryText').textContent = text;
+  }
+  document.getElementById('tableName').addEventListener('change', updateSummary);
+
+  // ── Connection test
+  async function testConnection() {
+    const cs = document.getElementById('connString').value.trim();
+    if (!cs) { showConnHelper('error', 'Enter a connection string first.'); return; }
+    const btn = document.getElementById('testBtn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res = await fetch('/api/v1/connection/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionString: cs })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showConnHelper('ok', '✓ Connected successfully');
+        setPill('ok', 'Connected');
+      } else {
+        showConnHelper('error', '✗ ' + data.message);
+        setPill('error', 'Failed');
+      }
+    } catch (e) {
+      showConnHelper('error', '✗ ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  function showConnHelper(state, msg) {
+    const el = document.getElementById('connHelper');
+    el.className = state === 'ok' ? 'helper-ok' : state === 'error' ? 'helper-error' : 'helper';
+    el.textContent = msg;
+  }
+
+  function setPill(state, text) {
+    const pill = document.getElementById('connPill');
+    pill.className = 'conn-pill' + (state === 'ok' ? '' : state === 'error' ? ' is-error' : ' is-unknown');
+    document.getElementById('connPillText').textContent = text;
+  }
+
+  // ── Import job
+  async function startImport() {
+    if (selectedFiles.files.length === 0) {
+      alert('Please select at least one Excel file.'); return;
+    }
+    showLoader();
+
+    currentJobId = crypto.randomUUID();
+    jobStartTime = Date.now();
+    await setupSignalR(currentJobId);
+
+    document.getElementById('progressSection').style.display = '';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').className = 'progress-fill';
+    document.getElementById('progressPct').textContent = '0%';
+    document.getElementById('progressStage').textContent = 'Starting…';
+    document.getElementById('progressRows').textContent = '';
+    document.getElementById('progressTitle').textContent = 'Importing…';
+    document.getElementById('cancelBtn').style.display = '';
+    document.getElementById('resetAfterBtn').style.display = 'none';
+    document.getElementById('importBtn').disabled = true;
+    resetStageTicks();
+    stageProgress = 0;
+
+    const formData = new FormData();
+    formData.append('jobId', currentJobId);
+    formData.append('tableName', document.getElementById('tableName').value);
+    formData.append('schemaName', 'dbo');
+    formData.append('replaceTable', loadMode === 'drop');
+    if (isAdmin) formData.append('connectionString', document.getElementById('connString')?.value.trim() ?? '');
+    formData.append('__RequestVerificationToken',
+      document.querySelector('input[name="__RequestVerificationToken"]').value);
+    for (const f of selectedFiles.files) formData.append('files', f);
+
+    await fetch('/Import?handler=Run', { method: 'POST', body: formData });
+  }
+
+  async function cancelJob() {
+    if (!currentJobId) return;
+    await fetch('/Import?handler=Cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value },
+      body: JSON.stringify({ jobId: currentJobId })
+    });
+  }
+
+  async function setupSignalR(jobId) {
+    if (connection) { try { await connection.stop(); } catch {} }
+    connection = new signalR.HubConnectionBuilder()
+      .withUrl('/progressHub').withAutomaticReconnect().build();
+
+    connection.on('progress', (msg) => {
+      updateProgress(msg);
+      if (msg.isComplete || msg.isError) onJobEnd(msg);
+    });
+
+    await connection.start();
+    await connection.invoke('JoinJob', jobId);
+  }
+
+  function updateProgress(msg) {
+    const pct = msg.percent || 0;
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressPct').textContent = Math.round(pct) + '%';
+    document.getElementById('progressStage').textContent = msg.message || '';
+    if (msg.rowsDone > 0) {
+      document.getElementById('progressRows').textContent =
+        msg.rowsDone.toLocaleString() + (msg.rowsTotal > 0 ? ' / ' + msg.rowsTotal.toLocaleString() : '') + ' rows';
+    }
+
+    const stage = (msg.stage || '').toLowerCase();
+    if (stage.includes('schema') || pct > 5)  advanceStage('stg-schema');
+    if (stage.includes('table') || pct > 20)  advanceStage('stg-table');
+    if (stage.includes('copy') || stage.includes('bulk') || pct > 30)  advanceStage('stg-copy');
+  }
+
+  function advanceStage(id) {
+    const row  = document.getElementById(id);
+    const tick = row?.querySelector('.stage-tick');
+    if (!tick || tick.classList.contains('is-active') || tick.querySelector('svg')) return;
+    document.querySelectorAll('.stage-tick.is-active').forEach(t => {
+      t.classList.remove('is-active');
+      t.innerHTML = '<svg width="12" height="12"><use href="#ic-check"/></svg>';
+      const timeEl = t.closest('.stage-row')?.querySelector('.stage-time');
+      if (timeEl) timeEl.textContent = ((Date.now() - jobStartTime) / 1000).toFixed(1) + 's';
+    });
+    tick.classList.remove('is-pending');
+    tick.classList.add('is-active');
+    tick.innerHTML = '<span style="width:6px;height:6px;background:currentColor;border-radius:50%;display:inline-block"></span>';
+  }
+
+  function resetStageTicks() {
+    ['stg-schema','stg-table','stg-copy','stg-verify'].forEach(id => {
+      const row  = document.getElementById(id);
+      const tick = row?.querySelector('.stage-tick');
+      if (tick) {
+        tick.className = 'stage-tick is-pending';
+        tick.innerHTML = '<span style="font-size:11px">·</span>';
+      }
+      const t = document.getElementById(id + '-t');
+      if (t) t.textContent = '—';
+    });
+  }
+
+  function onJobEnd(msg) {
+    hideLoader();
+    const elapsed = ((Date.now() - jobStartTime) / 1000).toFixed(1) + 's';
+    const ok = msg.isComplete && !msg.isError;
+    const bar = document.getElementById('progressBar');
+    bar.style.width = '100%';
+    bar.className = 'progress-fill ' + (ok ? 'is-success' : 'is-error');
+
+    document.querySelectorAll('.stage-tick.is-active,.stage-tick.is-pending').forEach(t => {
+      if (ok) {
+        t.classList.remove('is-active','is-pending');
+        t.innerHTML = '<svg width="12" height="12"><use href="#ic-check"/></svg>';
+      }
+      const timeEl = t.closest('.stage-row')?.querySelector('.stage-time');
+      if (timeEl && timeEl.textContent === '—') timeEl.textContent = elapsed;
+    });
+
+    document.getElementById('progressTitle').textContent = ok ? 'Import complete' : 'Import failed';
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('resetAfterBtn').style.display = '';
+    document.getElementById('importBtn').disabled = false;
+
+    if (ok) {
+      document.getElementById('lastRunBadge').className = 'badge badge-success';
+      document.getElementById('lastRunBadge').innerHTML = '<span class="badge-dot"></span> Success';
+      document.getElementById('lastRunMeta').textContent = 'Just now · ' + document.getElementById('tableName').value;
+      document.getElementById('lr-rows').textContent   = msg.rowsDone ? msg.rowsDone.toLocaleString() : '—';
+      document.getElementById('lr-sheets').textContent = selectedFiles.files.length.toString();
+      document.getElementById('lr-mode').textContent   = loadMode === 'drop' ? 'Drop & Recreate' : 'Append';
+      document.getElementById('lr-duration').textContent = elapsed;
+      document.getElementById('lastRunGrid').style.display = '';
+
+      const tbody = document.getElementById('recentBody');
+      const emptyRow = tbody.querySelector('[colspan]');
+      if (emptyRow) emptyRow.parentElement.remove();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><span class="mono text-sm">${document.getElementById('tableName').value}</span></td>
+                      <td class="muted text-sm">Just now</td>
+                      <td style="text-align:right">${msg.rowsDone ? msg.rowsDone.toLocaleString() : '—'}</td>`;
+      tbody.prepend(tr);
+    }
+    if (isAdmin) setPill(ok ? 'ok' : 'error', ok ? 'Connected' : 'Error');
+  }
+
+  function resetProgress() {
+    document.getElementById('progressSection').style.display = 'none';
+  }
+
+  function resetForm() {
+    selectedFiles = new DataTransfer();
+    renderFileList();
+    if (isAdmin) {
+      document.getElementById('connString').value = '';
+      showConnHelper('neutral', 'Leave blank to use the server default connection.');
+      setPill('unknown', 'Not tested');
+    }
+    resetProgress();
+  }
+</script>
+}

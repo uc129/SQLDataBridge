@@ -3,7 +3,15 @@
     "allow": [
       "Bash(dotnet build *)",
       "WebFetch(domain:api.anthropic.com)",
-      "Bash(findstr /V \"MSB3026\\\\|MSB3027\\\\|MSB3021\\\\|retry\\\\|locked\\\\|DataBridge.exe\")"
+      "Bash(findstr /V \"MSB3026\\\\|MSB3027\\\\|MSB3021\\\\|retry\\\\|locked\\\\|DataBridge.exe\")",
+      "Bash(dotnet sln *)",
+      "Bash(rmdir Pages/Admin Pages/Shared Pages)",
+      "Bash(rmdir Services Hubs)",
+      "Bash(rm -f SqlExport/export.xlsx TextFile.txt)",
+      "Bash(git ls-tree *)",
+      "Bash(grep -E \"\\\\.\\(cshtml|cs\\)$\")",
+      "Bash(dotnet tool *)",
+      "Bash(libman restore *)"
     ]
   }
 }
