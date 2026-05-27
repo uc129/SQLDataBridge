@@ -5,6 +5,7 @@ using DataBridge.Infrastructure.Jobs;
 using DataBridge.Infrastructure.Persistence;
 using DataBridge.Infrastructure.Repositories;
 using DataBridge.Infrastructure.SignalR;
+using DataBridge.Infrastructure.TradePayable;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,6 +29,8 @@ public static class DependencyInjection
         services.AddScoped<IProxyAuthService,  ProxyAuthService>();
         services.AddScoped<IProgressNotifier,  SignalRProgressNotifier>();
         services.AddScoped<AzureAdUserEnricher>();
+
+        services.AddTradePayableInfrastructure(config);
 
         return services;
     }

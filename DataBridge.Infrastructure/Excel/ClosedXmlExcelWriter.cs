@@ -11,12 +11,9 @@ internal sealed class ClosedXmlExcelWriter : IExcelWriter
         string filePrefix,
         string sheetName,
         string outputFolder,
-        int partNumber,
-        int totalParts)
+        int partNumber)
     {
-        var filename = totalParts == 1
-            ? $"{filePrefix}.xlsx"
-            : $"{filePrefix}_part{partNumber:D2}.xlsx";
+        var filename = $"{filePrefix}_part{partNumber:D2}.xlsx";
         var filepath = Path.Combine(outputFolder, filename);
 
         using var wb = new XLWorkbook();

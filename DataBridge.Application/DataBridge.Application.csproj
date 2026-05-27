@@ -11,4 +11,9 @@
     <ProjectReference Include="..\DataBridge.Domain\DataBridge.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Legacy reference files — not compiled, kept for historical reference only -->
+    <Compile Remove="TradePayable\Legacy\**\*.cs" />
+  </ItemGroup>
+
 </Project>

@@ -1,8 +1,10 @@
 using Dapper;
 using DataBridge.Application.Interfaces;
+using DataBridge.Application.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System.Data;
+using System.Runtime.CompilerServices;
 
 namespace DataBridge.Infrastructure.Repositories;
 
@@ -33,31 +35,42 @@ internal sealed class DapperExportRepository(IConfiguration config) : IExportRep
         return result.AsList();
     }
 
-    public async Task<(IReadOnlyList<string> Columns, IReadOnlyList<object?[]> Rows)>
-        ExecuteQueryAsync(string connectionString, string sql, CancellationToken ct = default)
+    public async Task<ExportQueryStream> StreamQueryAsync(
+        string connectionString, string sql, CancellationToken ct = default)
     {
-        var allRows = new List<object?[]>();
-        List<string> columns;
-
-        await using var conn   = new SqlConnection(connectionString);
+        var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct);
-        await using var cmd    = new SqlCommand(sql, conn) { CommandTimeout = 0 };
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct);
+        var cmd    = new SqlCommand(sql, conn) { CommandTimeout = 0 };
+        var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct);
 
-        columns = Enumerable.Range(0, reader.FieldCount)
-                            .Select(i => reader.GetName(i))
-                            .ToList();
+        var columns = Enumerable.Range(0, reader.FieldCount)
+                                .Select(i => reader.GetName(i))
+                                .ToList();
 
-        while (await reader.ReadAsync(ct))
+        return new ExportQueryStream(columns, ReadRowsAsync(reader, conn, cmd, ct));
+    }
+
+    private static async IAsyncEnumerable<object?[]> ReadRowsAsync(
+        SqlDataReader reader, SqlConnection conn, SqlCommand cmd,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var row = new object?[reader.FieldCount];
-            reader.GetValues(row!);
-            for (int i = 0; i < row.Length; i++)
-                if (row[i] is DBNull) row[i] = null;
-            allRows.Add(row);
+            while (await reader.ReadAsync(ct))
+            {
+                ct.ThrowIfCancellationRequested();
+                var row = new object?[reader.FieldCount];
+                reader.GetValues(row!);
+                for (int i = 0; i < row.Length; i++)
+                    if (row[i] is DBNull) row[i] = null;
+                yield return row;
+            }
         }
-
-        return (columns, allRows);
+        finally
+        {
+            await reader.DisposeAsync();
+            await cmd.DisposeAsync();
+            await conn.DisposeAsync();
+        }
     }
 }

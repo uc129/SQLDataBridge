@@ -7,4 +7,9 @@
     <RootNamespace>DataBridge.Domain</RootNamespace>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <Compile Remove="tool-concepts\**" />
+  </ItemGroup>
+
 </Project>

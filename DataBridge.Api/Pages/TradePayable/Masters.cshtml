@@ -1,0 +1,195 @@
+@page
+@model DataBridge.Api.Pages.TradePayable.TradePayableMastersModel
+@{
+    ViewData["Title"] = "Master Tables";
+    ViewData["ActivePage"] = "tradepayable";
+    var isAdmin = User.IsInRole("Admin");
+}
+
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Master Tables</h1>
+    <div class="sub">View and manage the 13 reference tables used by the pipeline.</div>
+  </div>
+  <div class="topbar-right">
+    <a class="btn btn-ghost btn-sm" href="/TradePayable">
+      <svg width="13" height="13"><use href="#ic-arrow-l"/></svg> Back to Runs
+    </a>
+    <div class="tb-avatar">@(string.Concat((User.FindFirstValue("DataBridgeDisplayName") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpper(w[0]))))</div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <a href="/TradePayable">Trade Payable</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Master Tables</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#1F4E79">
+          <svg width="20" height="20"><use href="#ic-settings"/></svg>
+        </div>
+        Master Tables
+      </h1>
+      <p class="page-sub">Reference data used in pipeline processing. @(isAdmin ? "Admin: full CRUD access." : "Read-only.")</p>
+    </div>
+  </div>
+
+  @* Tab strip *@
+  <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px" id="tabStrip"></div>
+
+  @* Table area *@
+  <div class="card" style="padding:0;overflow:hidden" id="tableCard">
+    <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+      <h3 id="tableTitle" style="font-size:14px;margin:0">Select a table</h3>
+      @if (isAdmin)
+      {
+          <button class="btn btn-primary btn-sm" id="addRowBtn" style="display:none" onclick="showAddRow()">
+            <svg width="12" height="12"><use href="#ic-plus"/></svg> Add Row
+          </button>
+      }
+    </div>
+    <div id="addRowForm" style="display:none;padding:14px 16px;background:var(--blue-100);border-bottom:1px solid var(--border)">
+      <div id="addRowFields" style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary btn-sm" onclick="submitAddRow()">Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelAddRow()">Cancel</button>
+      </div>
+    </div>
+    <div id="tableContent" style="overflow-x:auto">
+      <div style="padding:32px;text-align:center;color:var(--text-muted);font-style:italic">Select a table from the tabs above.</div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  const isAdmin = @(isAdmin ? "true" : "false");
+
+  const TABLES = [
+    { key: 'advance-gls',   label: 'Advance GLs' },
+    { key: 'liability-gls', label: 'Liability GLs' },
+    { key: 'not-due-gls',   label: 'Not Due GLs' },
+    { key: 'msme-codes',    label: 'MSME Codes' },
+    { key: 'capital-gls',   label: 'Capital GLs' },
+    { key: 'insurance-gls', label: 'Insurance GLs' },
+    { key: 'non-msme-gls',  label: 'Non-MSME GLs' },
+    { key: 'unclaimed-gls', label: 'Unclaimed GLs' },
+    { key: 'gl-hyperion',   label: 'GL Hyperion' },
+    { key: 'icp-hyperion',  label: 'ICP Hyperion' },
+    { key: 'icp-vendor',    label: 'ICP Vendor Map' },
+    { key: 'forex',         label: 'Forex Rates' },
+    { key: 'ageing-groups', label: 'Ageing Groups' },
+  ];
+
+  let activeTable = null;
+  let tableData   = [];
+
+  // Build tab strip
+  const strip = document.getElementById('tabStrip');
+  TABLES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost btn-sm';
+    btn.textContent = t.label;
+    btn.id = 'tab-' + t.key;
+    btn.onclick = () => loadTable(t.key, t.label);
+    strip.appendChild(btn);
+  });
+
+  async function loadTable(key, label) {
+    TABLES.forEach(t => {
+      const b = document.getElementById('tab-' + t.key);
+      b.className = t.key === key ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm';
+    });
+    activeTable = key;
+    document.getElementById('tableTitle').textContent = label;
+    document.getElementById('addRowBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tableContent').innerHTML =
+      '<div style="padding:24px;text-align:center;color:var(--text-muted)">Loading…</div>';
+
+    try {
+      const res  = await fetch('/api/v1/tradepayable/masters/' + key);
+      tableData  = await res.json();
+      renderTable(tableData);
+    } catch (e) {
+      document.getElementById('tableContent').innerHTML =
+        '<div style="padding:24px;color:var(--red-600)">' + e.message + '</div>';
+    }
+  }
+
+  function renderTable(rows) {
+    const content = document.getElementById('tableContent');
+    if (!rows || rows.length === 0) {
+      content.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-style:italic">No rows.</div>';
+      return;
+    }
+    const cols = Object.keys(rows[0]);
+    const html = `<table class="data-table" style="width:100%;border-collapse:collapse">
+      <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}${isAdmin?'<th style="width:60px"></th>':''}</tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          ${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}
+          ${isAdmin ? `<td><button class="btn btn-ghost btn-sm" style="height:22px;padding:0 6px;color:var(--red-600)" onclick="deleteRow(${r['id'] ?? r['Id']})"><svg width="11" height="11"><use href="#ic-x"/></svg></button></td>` : ''}
+        </tr>`).join('')}
+      </tbody></table>`;
+    content.innerHTML = html;
+  }
+
+  function showAddRow() {
+    const form = document.getElementById('addRowForm');
+    if (!tableData.length) return;
+    const cols = Object.keys(tableData[0]).filter(c => c.toLowerCase() !== 'id');
+    const fields = document.getElementById('addRowFields');
+    fields.innerHTML = cols.map(c => `
+      <div class="field" style="min-width:140px;margin:0">
+        <label class="label" style="font-size:11px">${c}</label>
+        <input class="input" id="add-${c}" placeholder="${c}" style="height:30px;font-size:12px" />
+      </div>`).join('');
+    form.style.display = '';
+  }
+
+  function cancelAddRow() {
+    document.getElementById('addRowForm').style.display = 'none';
+  }
+
+  async function submitAddRow() {
+    if (!tableData.length) return;
+    const cols = Object.keys(tableData[0]).filter(c => c.toLowerCase() !== 'id');
+    const body = {};
+    cols.forEach(c => { body[c] = document.getElementById('add-' + c)?.value || null; });
+
+    const res = await fetch('/api/v1/tradepayable/masters/' + activeTable, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      cancelAddRow();
+      const tbl = TABLES.find(t => t.key === activeTable);
+      if (tbl) loadTable(tbl.key, tbl.label);
+    } else {
+      alert('Error: ' + await res.text());
+    }
+  }
+
+  async function deleteRow(id) {
+    if (!confirm('Delete row ' + id + '?')) return;
+    const res = await fetch('/api/v1/tradepayable/masters/' + activeTable + '/' + id, { method: 'DELETE' });
+    if (res.ok) {
+      const tbl = TABLES.find(t => t.key === activeTable);
+      if (tbl) loadTable(tbl.key, tbl.label);
+    } else {
+      alert('Error: ' + await res.text());
+    }
+  }
+</script>
+<style>
+  .data-table th { background:var(--blue-100);color:var(--navy-700);font-size:11px;font-weight:600;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap }
+  .data-table td { padding:7px 12px;font-size:12px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;vertical-align:middle }
+  .data-table tr:last-child td { border-bottom:none }
+  .data-table tr:hover td { background:var(--surface-2) }
+</style>
+}

@@ -1,0 +1,466 @@
+@page
+@model DataBridge.Api.Pages.TradePayable.TradePayableRunModel
+@{
+    ViewData["Title"] = "Trade Payable Run";
+    ViewData["ActivePage"] = "tradepayable";
+}
+
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Trade Payable Run</h1>
+    <div class="sub" id="runMeta">No run loaded.</div>
+  </div>
+  <div class="topbar-right">
+    <a class="btn btn-ghost btn-sm" href="/TradePayable">
+      <svg width="13" height="13"><use href="#ic-arrow-l"/></svg> All Runs
+    </a>
+    <div class="tb-avatar">@(string.Concat((User.FindFirstValue("DataBridgeDisplayName") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpper(w[0]))))</div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <a href="/TradePayable">Trade Payable</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Run</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#1F4E79">
+          <svg width="20" height="20"><use href="#ic-pipeline"/></svg>
+        </div>
+        Pipeline Run
+      </h1>
+    </div>
+  </div>
+
+  <div class="two-col">
+
+    @* ── LEFT: Upload + Step List ──────────────────────────────────── *@
+    <div>
+
+      @* Upload Card *@
+      <div class="card card-pad" id="uploadCard">
+        <div class="card-head">
+          <h3>
+            <span style="width:26px;height:26px;border-radius:6px;background:var(--blue-100);color:var(--blue-500);display:grid;place-items:center">
+              <svg width="14" height="14"><use href="#ic-upload"/></svg>
+            </span>
+            Upload FAGLL03
+          </h3>
+          <div class="sub">Start a new pipeline run by uploading an FAGLL03 Excel export.</div>
+        </div>
+        @Html.AntiForgeryToken()
+        <div class="field-row cols-2">
+          <div class="field">
+            <label class="label">Quarter Date</label>
+            <input class="input" type="month" id="quarterDate" />
+          </div>
+          <div class="field">
+            <label class="label">Revision</label>
+            <select class="select" id="revisionNumber">
+              <option value="R01">R01</option>
+              <option value="R02">R02</option>
+              <option value="R03">R03</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">FAGLL03 Excel File(s)</label>
+          <div class="dropzone" id="uploadDropZone" onclick="document.getElementById('uploadFileInput').click()">
+            <div class="dropzone-icon"><svg width="20" height="20"><use href="#ic-upload"/></svg></div>
+            <div><strong>Drop FAGLL03 .xlsx file(s) here</strong></div>
+            <div class="hint">Multiple files are merged by column name. Click to browse.</div>
+          </div>
+          <div id="uploadFileName" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
+          <input type="file" id="uploadFileInput" accept=".xlsx,.xls" multiple style="display:none" onchange="onFileSelected(this)" />
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:4px">
+          <button class="btn btn-primary" id="uploadBtn" onclick="uploadFAGLL03()">
+            <svg width="14" height="14"><use href="#ic-upload"/></svg> Upload &amp; Create Run
+          </button>
+        </div>
+      </div>
+
+      @* Step List Card *@
+      <div class="card card-pad" id="stepsCard" style="display:none">
+        <div class="card-head">
+          <h3>Pipeline Steps</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="cancelBtn" onclick="cancelRun()" style="display:none">Cancel</button>
+            <button class="btn btn-secondary btn-sm" id="runNextBtn" onclick="runNextStep()">
+              <svg width="12" height="12"><use href="#ic-arrow-r"/></svg> Run Next
+            </button>
+            <button class="btn btn-primary btn-sm" id="runAllBtn" onclick="runAll()">
+              <svg width="12" height="12"><use href="#ic-play"/></svg> Run All
+            </button>
+          </div>
+        </div>
+        <div id="stepList" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+      </div>
+
+    </div>
+
+    @* ── RIGHT: Progress + Downloads ───────────────────────────────── *@
+    <div class="side-stack">
+
+      <div class="card card-pad" id="progressCard">
+        <div class="card-head" style="margin-bottom:12px">
+          <h3 style="font-size:14px">Progress</h3>
+          <span class="badge badge-muted" id="statusBadge">Idle</span>
+        </div>
+        <div id="progressArea" style="display:none">
+          <div class="row-between" style="margin-bottom:8px">
+            <strong style="font-size:13.5px" id="progressTitle">Running…</strong>
+            <span class="text-sm muted num" id="progressPct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressBar" style="width:0%"></div>
+          </div>
+          <div class="progress-meta" style="margin-top:6px">
+            <span id="progressStage">Initialising…</span>
+          </div>
+        </div>
+        <div id="progressIdle" style="color:var(--text-muted);font-size:13px;font-style:italic;padding:8px 0">
+          Upload a file to begin.
+        </div>
+      </div>
+
+      <div class="card card-pad" id="downloadsCard" style="display:none">
+        <div class="card-head" style="margin-bottom:10px">
+          <h3 style="font-size:14px">Downloads</h3>
+        </div>
+        <div id="downloadsList" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+
+      <div class="card card-pad" id="runInfoCard" style="display:none">
+        <div class="card-head" style="margin-bottom:10px">
+          <h3 style="font-size:14px">Run Info</h3>
+        </div>
+        <div class="lastrun-grid">
+          <div><div class="k">Run ID</div><div class="v mono" id="ri-runId" style="font-size:11px">—</div></div>
+          <div><div class="k">Quarter</div><div class="v" id="ri-quarter">—</div></div>
+          <div><div class="k">Revision</div><div class="v mono" id="ri-revision">—</div></div>
+          <div><div class="k">Status</div><div class="v" id="ri-status">—</div></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  // ═══════════════════════════════════════════════════════
+  //  Step definitions (StepIndex → label + outputs)
+  // ═══════════════════════════════════════════════════════
+  const STEPS = [
+    { idx: 0,  label: 'Get Raw Data',               outputs: [0] },
+    { idx: 1,  label: 'Populate (Vendor/PO)',        outputs: [1] },
+    { idx: 2,  label: 'Merge Cross-Server Data',     outputs: [2] },
+    { idx: 3,  label: 'Process GIT — Local Currency',outputs: [3, 4, 5] },
+    { idx: 6,  label: 'Append Net Liability (Local)',outputs: [6] },
+    { idx: 7,  label: 'Process GIT — Doc Currency',  outputs: [7, 8, 9] },
+    { idx: 10, label: 'Append Net Liability (DocCurr)',outputs: [10] },
+    { idx: 11, label: 'Merge Local + Doc Currency',  outputs: [11] },
+    { idx: 12, label: 'CP Fix · Ageing · Hyperion',  outputs: [12] },
+    { idx: 13, label: 'Summary',                     outputs: [13] },
+  ];
+
+  const STEP_NAMES = {
+    0:'Raw Data', 1:'Populated', 2:'Merged', 3:'GIT Processed', 4:'Net Liability (Local)',
+    5:'Original+Keys', 6:'Net Liability Appended', 7:'GIT Doc Processed', 8:'Net Liability (DocCurr)',
+    9:'Original+DocKeys', 10:'DocCurr Appended', 11:'Trade+SNA Merged', 12:'Final Result', 13:'Summary'
+  };
+
+  let runId          = null;
+  let completedSteps = [];
+  let isRunning      = false;
+  let connection     = null;
+  let activeJobId    = null;
+  let selectedFiles  = [];   // Array<File>
+
+  // ─── Check for runId in URL ──────────────────────────
+  const urlRunId = new URLSearchParams(location.search).get('runId');
+  if (urlRunId) {
+    runId = urlRunId;
+    loadState();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  File selection
+  // ═══════════════════════════════════════════════════════
+  const dropZone = document.getElementById('uploadDropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) setFiles(Array.from(e.dataTransfer.files));
+  });
+
+  function onFileSelected(input) {
+    if (input.files.length) setFiles(Array.from(input.files));
+  }
+
+  function setFiles(files) {
+    selectedFiles = files;
+    const totalMB = files.reduce((s, f) => s + f.size, 0) / 1024 / 1024;
+    document.getElementById('uploadFileName').textContent =
+      files.length === 1
+        ? `${files[0].name} (${totalMB.toFixed(1)} MB)`
+        : `${files.length} files selected — ${files.map(f => f.name).join(', ')} (${totalMB.toFixed(1)} MB total)`;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Upload
+  // ═══════════════════════════════════════════════════════
+  async function uploadFAGLL03() {
+    if (!selectedFiles.length) { alert('Select at least one file first.'); return; }
+    const qd = document.getElementById('quarterDate').value;
+    if (!qd) { alert('Select a quarter date.'); return; }
+
+    const jobId = crypto.randomUUID();
+    activeJobId = jobId;
+
+    setBusy(true);
+    showProgress('Uploading…', 0);
+
+    await setupSignalR(jobId);
+    const done = listenForCompletion();
+
+    const fd = new FormData();
+    fd.append('jobId', jobId);
+    fd.append('quarterDate', qd + '-01');
+    fd.append('revisionNumber', document.getElementById('revisionNumber').value);
+    // Append each file under the 'files' key — controller binds to IFormFileCollection.
+    selectedFiles.forEach(f => fd.append('files', f));
+
+    const res = await fetch('/api/v1/tradepayable/upload', { method: 'POST', body: fd });
+    if (!res.ok) { showError('Upload failed: ' + res.statusText); setBusy(false); return; }
+
+    const result = await done;
+    if (result.success && result.runId) {
+      runId = result.runId;
+      history.pushState({}, '', '/TradePayable/Run?runId=' + runId);
+      await loadState();
+      document.getElementById('uploadCard').style.display = 'none';
+      document.getElementById('stepsCard').style.display  = '';
+    }
+    setBusy(false);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Load pipeline state
+  // ═══════════════════════════════════════════════════════
+  async function loadState() {
+    if (!runId) return;
+    try {
+      const res  = await fetch('/api/v1/tradepayable/state?runId=' + runId);
+      if (!res.ok) return;
+      const data = await res.json();
+      const run  = data.run;
+
+      completedSteps = data.completedSteps || [];
+
+      document.getElementById('runMeta').textContent =
+        run.quarterDate.substring(0,7) + ' · ' + run.revisionNumber + ' · Step ' + run.currentStepIndex + '/13';
+      document.getElementById('uploadCard').style.display = 'none';
+      document.getElementById('stepsCard').style.display  = '';
+      document.getElementById('runInfoCard').style.display = '';
+      document.getElementById('ri-runId').textContent    = run.runId.substring(0,8) + '…';
+      document.getElementById('ri-quarter').textContent  = new Date(run.quarterDate).toLocaleDateString('en-GB',{month:'short',year:'numeric'});
+      document.getElementById('ri-revision').textContent = run.revisionNumber;
+      document.getElementById('ri-status').textContent   = run.status;
+
+      renderStepList();
+      renderDownloads();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Render step list
+  // ═══════════════════════════════════════════════════════
+  function renderStepList() {
+    const list = document.getElementById('stepList');
+    list.innerHTML = STEPS.map(s => {
+      const done    = completedSteps.includes(s.idx);
+      const icon    = done
+        ? '<svg width="14" height="14" style="color:var(--green-500)"><use href="#ic-check"/></svg>'
+        : '<span style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border);display:inline-block"></span>';
+      const dls = done ? s.outputs.map(o => `
+        <a class="btn btn-ghost btn-sm" style="height:24px;padding:0 8px;font-size:11px"
+           href="/api/v1/tradepayable/download?runId=${runId}&step=${o}" download>
+          <svg width="11" height="11"><use href="#ic-download"/></svg> Step ${o}
+        </a>`).join('') : '';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:8px;background:${done?'var(--surface-2)':'var(--surface)'}">
+          ${icon}
+          <span style="flex:1;font-size:13px;font-weight:${done?500:400};color:${done?'var(--text)':'var(--text-muted)'}">${s.label}</span>
+          <div style="display:flex;gap:4px">${dls}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Render downloads panel
+  // ═══════════════════════════════════════════════════════
+  function renderDownloads() {
+    const card = document.getElementById('downloadsCard');
+    const list = document.getElementById('downloadsList');
+    const dlSteps = completedSteps.filter(s => s !== 31 && s !== 71);
+    if (dlSteps.length === 0) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    list.innerHTML = dlSteps.sort((a,b)=>a-b).map(s => {
+      const name = STEP_NAMES[s] || ('Step ' + s);
+      return `<a class="btn btn-ghost btn-sm"
+                 href="/api/v1/tradepayable/download?runId=${runId}&step=${s}" download>
+                <svg width="12" height="12"><use href="#ic-download"/></svg> ${name}
+              </a>`;
+    }).join('');
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Run controls
+  // ═══════════════════════════════════════════════════════
+  function nextStep() {
+    const runnable = STEPS.map(s => s.idx);
+    return runnable.find(i => !completedSteps.includes(i)) ?? null;
+  }
+
+  async function runNextStep() {
+    const target = nextStep();
+    if (target === null) { alert('All steps are complete!'); return; }
+    await runStep(target);
+  }
+
+  async function runAll() {
+    if (!runId) return;
+    if (isRunning) return;
+    isRunning = true;
+    setBusy(true);
+    document.getElementById('cancelBtn').style.display = '';
+
+    const jobId = crypto.randomUUID();
+    activeJobId = jobId;
+    showProgress('Running pipeline…', 0);
+    await setupSignalR(jobId);
+    const done = listenForCompletion();
+
+    const res = await fetch('/api/v1/tradepayable/run-pipeline', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, jobId })
+    });
+    if (!res.ok) { showError('Failed: ' + res.statusText); setBusy(false); isRunning = false; return; }
+
+    await done;
+    await loadState();
+    isRunning = false;
+    setBusy(false);
+    document.getElementById('cancelBtn').style.display = 'none';
+  }
+
+  async function runStep(targetIdx) {
+    if (!runId || isRunning) return;
+    isRunning = true;
+    setBusy(true);
+    document.getElementById('cancelBtn').style.display = '';
+
+    const jobId = crypto.randomUUID();
+    activeJobId = jobId;
+    const stepLabel = STEPS.find(s => s.idx === targetIdx)?.label ?? 'Step ' + targetIdx;
+    showProgress('Running: ' + stepLabel, 0);
+
+    await setupSignalR(jobId);
+    const done = listenForCompletion();
+
+    const res = await fetch('/api/v1/tradepayable/run-step', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, stepIndex: targetIdx, jobId })
+    });
+    if (!res.ok) { showError('Failed: ' + res.statusText); setBusy(false); isRunning = false; return; }
+
+    await done;
+    await loadState();
+    isRunning = false;
+    setBusy(false);
+    document.getElementById('cancelBtn').style.display = 'none';
+  }
+
+  async function cancelRun() {
+    if (!activeJobId) return;
+    await fetch('/api/v1/tradepayable/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId: activeJobId })
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  SignalR
+  // ═══════════════════════════════════════════════════════
+  async function setupSignalR(jobId) {
+    if (connection) { try { connection.off('progress'); await connection.stop(); } catch {} }
+    connection = new signalR.HubConnectionBuilder()
+      .withUrl('/progressHub').withAutomaticReconnect().build();
+    await connection.start();
+    await connection.invoke('JoinJob', jobId);
+  }
+
+  function listenForCompletion() {
+    return new Promise((resolve, reject) => {
+      connection.on('progress', msg => {
+        updateProgress(msg);
+        if (msg.isComplete) resolve({ success: true, runId: extractRunId(msg.message) });
+        if (msg.isError)    reject(new Error(msg.message));
+      });
+    });
+  }
+
+  function extractRunId(msg) {
+    const m = (msg || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return m ? m[0] : null;
+  }
+
+  function updateProgress(msg) {
+    document.getElementById('progressArea').style.display = '';
+    document.getElementById('progressIdle').style.display = 'none';
+    document.getElementById('progressTitle').textContent   = msg.stage;
+    document.getElementById('progressStage').textContent  = msg.message;
+    document.getElementById('progressBar').style.width    = msg.percent + '%';
+    document.getElementById('progressPct').textContent    = msg.percent + '%';
+    const badge = document.getElementById('statusBadge');
+    if (msg.isComplete) { badge.className = 'badge badge-success'; badge.textContent = 'Done'; }
+    else if (msg.isError) { badge.className = 'badge badge-fail'; badge.textContent = 'Error'; }
+    else { badge.className = 'badge badge-info'; badge.textContent = 'Running'; }
+  }
+
+  function showProgress(msg, pct) {
+    document.getElementById('progressArea').style.display = '';
+    document.getElementById('progressIdle').style.display = 'none';
+    document.getElementById('progressTitle').textContent  = msg;
+    document.getElementById('progressBar').style.width   = pct + '%';
+    document.getElementById('progressPct').textContent   = pct + '%';
+    document.getElementById('statusBadge').className = 'badge badge-info';
+    document.getElementById('statusBadge').textContent = 'Running';
+  }
+
+  function showError(msg) {
+    document.getElementById('progressTitle').textContent = 'Error';
+    document.getElementById('progressStage').textContent = msg;
+    document.getElementById('progressBar').className = 'progress-fill is-error';
+    document.getElementById('statusBadge').className = 'badge badge-fail';
+    document.getElementById('statusBadge').textContent = 'Error';
+  }
+
+  function setBusy(busy) {
+    document.getElementById('runNextBtn').disabled = busy;
+    document.getElementById('runAllBtn').disabled  = busy;
+    document.getElementById('uploadBtn') && (document.getElementById('uploadBtn').disabled = busy);
+  }
+</script>
+}

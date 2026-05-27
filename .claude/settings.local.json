@@ -11,7 +11,13 @@
       "Bash(git ls-tree *)",
       "Bash(grep -E \"\\\\.\\(cshtml|cs\\)$\")",
       "Bash(dotnet tool *)",
-      "Bash(libman restore *)"
+      "Bash(libman restore *)",
+      "Bash(xargs grep -l \"IProgressNotifier\\\\|ProgressHub\\\\|SignalRProgressNotifier\")",
+      "Bash(xargs grep -l \"IJobRegistry\\\\|InMemoryJobRegistry\")",
+      "Bash(python3 -c ' *)",
+      "Bash(node -e ' *)",
+      "Bash(iconv -f UTF-16 -t UTF-8)",
+      "Bash(xargs grep -l \"ICrossServer\\\\|ICPVendor\\\\|IStepResult\\\\|VendorBasicRecord\\\\|IcpVendor\\\\|podata\\\\|m_Vendor\")"
     ]
   }
 }

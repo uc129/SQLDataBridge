@@ -9,7 +9,9 @@ namespace DataBridge.Infrastructure.Excel;
 internal sealed class ExcelDataReaderParser : IExcelParser
 {
     public async Task<(IReadOnlyList<string> Columns, DataTable Data)> BuildMergedDataTableAsync(
-        IReadOnlyList<(string FileName, Stream Stream)> files, CancellationToken ct = default)
+        IReadOnlyList<(string FileName, Stream Stream)> files,
+        CancellationToken ct = default,
+        bool sanitizeColumnNames = true)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
@@ -38,7 +40,7 @@ internal sealed class ExcelDataReaderParser : IExcelParser
             {
                 foreach (DataColumn col in t.Columns)
                 {
-                    var safe = ColumnNameSanitizer.SafeColumnName(col.ColumnName);
+                    var safe = sanitizeColumnNames ? ColumnNameSanitizer.SafeColumnName(col.ColumnName) : col.ColumnName;
                     if (!string.IsNullOrWhiteSpace(safe) && seenCols.Add(safe))
                         allColumns.Add(safe);
                 }
@@ -70,7 +72,7 @@ internal sealed class ExcelDataReaderParser : IExcelParser
             var src    = ds.Tables[0];
             var colMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (DataColumn col in src.Columns)
-                colMap[col.ColumnName] = ColumnNameSanitizer.SafeColumnName(col.ColumnName);
+                colMap[col.ColumnName] = sanitizeColumnNames ? ColumnNameSanitizer.SafeColumnName(col.ColumnName) : col.ColumnName;
 
             foreach (DataRow srcRow in src.Rows)
             {

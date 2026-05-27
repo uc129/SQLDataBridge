@@ -1,4 +1,10 @@
+using DataBridge.Application.TradePayable.Processing;
+using DataBridge.Application.TradePayable.Services;
+using DataBridge.Application.TradePayable.Steps;
+using DataBridge.Application.TradePayable.UseCases;
 using DataBridge.Application.UseCases;
+using DataBridge.Domain.TradePayable.Configuration;
+using DataBridge.Domain.TradePayable.Contracts;
 using DataBridge.Infrastructure;
 using DataBridge.Infrastructure.Auth;
 using DataBridge.Infrastructure.Hubs;
@@ -108,7 +114,51 @@ builder.Services.AddScoped<AddUserUseCase>();
 builder.Services.AddScoped<ProxySignInUseCase>();
 builder.Services.AddScoped<CancelJobUseCase>();
 
+// ── Trade Payable ─────────────────────────────────────────────────────────────
+builder.Services.Configure<TradePayableSettings>(
+    builder.Configuration.GetSection("TradePayable"));
+
+// Processing engine
+builder.Services.AddScoped<HelperFunctions>();
+builder.Services.AddScoped<StaticMasterTableService>();
+//builder.Services.AddScoped<CrossServerMasterTablesService>();
+builder.Services.AddScoped<DataProcessor>();
+builder.Services.AddScoped<GITHelper>();
+builder.Services.AddScoped<GITProcessor>();
+builder.Services.AddScoped<GITDocCurrHelper>();
+builder.Services.AddScoped<GITDocCurrProcessor>();
+
+// Pipeline steps (ordered registration; DataProcessingService sorts by StepIndex)
+builder.Services.AddScoped<IProcessStep, Step00_GetRawDataStep>();
+builder.Services.AddScoped<IProcessStep, Step01_PopulateRawDataStep>();
+builder.Services.AddScoped<IProcessStep, Step02_GetMergedDataStep>();
+builder.Services.AddScoped<IProcessStep, Step03_ProcessGITLocalStep>();
+builder.Services.AddScoped<IProcessStep, Step06_AppendTradeNetLiabilityStep>();
+builder.Services.AddScoped<IProcessStep, Step07_ProcessGITDocCurrStep>();
+builder.Services.AddScoped<IProcessStep, Step10_AppendTradeDocCurrNetLiabilityStep>();
+builder.Services.AddScoped<IProcessStep, Step11_MergeTradeAndSNADataStep>();
+builder.Services.AddScoped<IProcessStep, Step12_FixCPAgeingHyperionStep>();
+builder.Services.AddScoped<IProcessStep, Step13_SaveProcessSummaryStep>();
+
+builder.Services.AddScoped<IDataProcessingService, DataProcessingService>();
+
+// Use cases
+builder.Services.AddScoped<UploadFAGLL03UseCase>();
+builder.Services.AddScoped<RunPipelineStepUseCase>();
+builder.Services.AddScoped<RunFullPipelineUseCase>();
+builder.Services.AddScoped<DownloadStepReportUseCase>();
+builder.Services.AddScoped<GetPipelineRunsUseCase>();
+builder.Services.AddScoped<GetPipelineStateUseCase>();
+builder.Services.AddScoped<MasterTableUseCase>();
+
 var app = builder.Build();
+
+// ── GLHyperionMapper startup initialisation ────────────────────────────────────
+using (var initScope = app.Services.CreateScope())
+{
+    var glRepo = initScope.ServiceProvider.GetRequiredService<IGLHyperionMapRepository>();
+    await GLHyperionMapper.InitializeAsync(glRepo);
+}
 
 if (!app.Environment.IsDevelopment())
 {

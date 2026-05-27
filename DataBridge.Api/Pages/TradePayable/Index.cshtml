@@ -1,0 +1,107 @@
+@page
+@model DataBridge.Api.Pages.TradePayable.TradePayableIndexModel
+@{
+    ViewData["Title"] = "Trade Payable";
+    ViewData["ActivePage"] = "tradepayable";
+}
+
+<div class="topbar">
+  <div class="topbar-title">
+    <h1>Trade Payable</h1>
+    <div class="sub">FAGLL03 advance deduction &amp; Hyperion classification pipeline.</div>
+  </div>
+  <div class="topbar-right">
+    <a class="btn btn-primary btn-sm" href="/TradePayable/Run">
+      <svg width="13" height="13"><use href="#ic-plus"/></svg> New Run
+    </a>
+    <div class="tb-avatar">@(string.Concat((User.FindFirstValue("DataBridgeDisplayName") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpper(w[0]))))</div>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="crumb">
+        <a href="/">FNA Tools</a>
+        <svg width="12" height="12"><use href="#ic-chevron-r"/></svg>
+        <span style="color:var(--text)">Trade Payable</span>
+      </div>
+      <h1 class="page-title">
+        <div class="page-title-icon" style="background:#1F4E79">
+          <svg width="20" height="20"><use href="#ic-chart"/></svg>
+        </div>
+        Trade Payable Pipeline
+      </h1>
+      <p class="page-sub">Upload FAGLL03 data, run the 14-step advance deduction &amp; Hyperion classification pipeline.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-primary" href="/TradePayable/Run">
+        <svg width="14" height="14"><use href="#ic-plus"/></svg> New Run
+      </a>
+      <a class="btn btn-secondary" href="/TradePayable/Masters">
+        <svg width="14" height="14"><use href="#ic-settings"/></svg> Master Tables
+      </a>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="data-table" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th>Quarter</th>
+          <th>Revision</th>
+          <th>Status</th>
+          <th>Step</th>
+          <th>Started By</th>
+          <th>Started At</th>
+          <th>Completed At</th>
+          <th style="width:120px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (!Model.Runs.Any())
+        {
+            <tr>
+              <td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);font-style:italic">
+                No pipeline runs yet. Start your first run above.
+              </td>
+            </tr>
+        }
+        @foreach (var run in Model.Runs.OrderByDescending(r => r.StartedAt))
+        {
+            var statusCls = run.Status switch
+            {
+                DataBridge.Domain.TradePayable.Models.PipelineRunStatus.Completed  => "badge-success",
+                DataBridge.Domain.TradePayable.Models.PipelineRunStatus.Failed     => "badge-fail",
+                DataBridge.Domain.TradePayable.Models.PipelineRunStatus.Cancelled  => "badge-muted",
+                DataBridge.Domain.TradePayable.Models.PipelineRunStatus.Running    => "badge-info",
+                _ => "badge-muted"
+            };
+            <tr>
+              <td>@run.QuarterDate.ToString("MMM yyyy")</td>
+              <td><span class="mono">@run.RevisionNumber</span></td>
+              <td><span class="badge @statusCls"><span class="badge-dot"></span> @run.Status</span></td>
+              <td>@run.CurrentStepIndex / 13</td>
+              <td>@run.StartedBy</td>
+              <td class="mono" style="font-size:12px">@run.StartedAt.ToLocalTime().ToString("dd MMM HH:mm")</td>
+              <td class="mono" style="font-size:12px">@(run.CompletedAt.HasValue ? run.CompletedAt.Value.ToLocalTime().ToString("dd MMM HH:mm") : "—")</td>
+              <td style="text-align:right;padding-right:12px">
+                <a class="btn btn-ghost btn-sm" href="/TradePayable/Run?runId=@run.RunId">
+                  <svg width="12" height="12"><use href="#ic-arrow-r"/></svg> Open
+                </a>
+              </td>
+            </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+@section Scripts {
+<style>
+  .data-table th { background:var(--blue-100);color:var(--navy-700);font-size:12px;font-weight:600;padding:10px 14px;text-align:left;border-bottom:1px solid var(--border) }
+  .data-table td { padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle }
+  .data-table tr:last-child td { border-bottom:none }
+  .data-table tr:hover td { background:var(--surface-2) }
+</style>
+}

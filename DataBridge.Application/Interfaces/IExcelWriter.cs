@@ -8,6 +8,5 @@ public interface IExcelWriter
         string filePrefix,
         string sheetName,
         string outputFolder,
-        int partNumber,
-        int totalParts);
+        int partNumber);
 }

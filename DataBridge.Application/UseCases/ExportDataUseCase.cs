@@ -11,6 +11,8 @@ public class ExportDataUseCase(
     IProgressNotifier progressNotifier,
     IJobRegistry jobRegistry)
 {
+    private const int ProgressInterval = 50_000;
+
     public async Task<JobResult> ExecuteAsync(ExportCommand cmd)
     {
         var ct     = jobRegistry.Register(cmd.JobId);
@@ -24,35 +26,60 @@ public class ExportDataUseCase(
             var sql = cmd.IsRawQuery ? cmd.QueryOrView : $"SELECT * FROM {cmd.QueryOrView}";
 
             await Notify(cmd.JobId, "Fetching", "Connecting…", 1);
-            var (columns, rows) = await exportRepository.ExecuteQueryAsync(cmd.ConnectionString, sql, ct);
+            var stream  = await exportRepository.StreamQueryAsync(cmd.ConnectionString, sql, ct);
+            var columns = stream.Columns;
 
-            long totalRows  = rows.Count;
-            result.RowsTotal = totalRows;
-            int totalParts   = Math.Max(1, (int)Math.Ceiling((double)totalRows / cmd.MaxRowsPerFile));
+            var buffer      = new List<object?[]>(cmd.MaxRowsPerFile);
+            long rowsFetched = 0;
+            int  partNum    = 0;
+            var  partPaths  = new List<string>();
 
-            await Notify(cmd.JobId, "Writing",
-                $"Fetched {totalRows:N0} rows — writing {totalParts} file(s)…", 50, totalRows, totalRows);
-
-            for (int part = 1; part <= totalParts; part++)
+            await foreach (var row in stream.Rows.WithCancellation(ct))
             {
-                int start = (part - 1) * cmd.MaxRowsPerFile;
-                int count = Math.Min(cmd.MaxRowsPerFile, rows.Count - start);
-                int pct   = 50 + (int)((double)(part - 1) / totalParts * 50);
+                buffer.Add(row);
+                rowsFetched++;
 
-                await Notify(cmd.JobId, "Writing",
-                    $"Writing file {part} of {totalParts}…", pct, (long)start, totalRows);
+                if (rowsFetched % ProgressInterval == 0)
+                    await Notify(cmd.JobId, "Fetching",
+                        $"Fetched {rowsFetched:N0} rows…",
+                        Math.Clamp((int)(rowsFetched / (double)ProgressInterval) + 1, 2, 45),
+                        rowsFetched);
 
-                var partRows = rows.Skip(start).Take(count).ToList();
-                var filepath = excelWriter.WritePartFile(
-                    columns, partRows, cmd.FilePrefix, cmd.SheetName, cmd.OutputFolder, part, totalParts);
-                result.OutputFiles.Add(filepath);
-                result.FilesCreated++;
+                if (buffer.Count >= cmd.MaxRowsPerFile)
+                {
+                    partNum++;
+                    await Notify(cmd.JobId, "Writing", $"Writing file {partNum}…", 50, rowsFetched);
+                    partPaths.Add(excelWriter.WritePartFile(
+                        columns, buffer, cmd.FilePrefix, cmd.SheetName, cmd.OutputFolder, partNum));
+                    buffer.Clear();
+                }
             }
+
+            if (buffer.Count > 0)
+            {
+                partNum++;
+                await Notify(cmd.JobId, "Writing", $"Writing file {partNum}…", 90, rowsFetched);
+                partPaths.Add(excelWriter.WritePartFile(
+                    columns, buffer, cmd.FilePrefix, cmd.SheetName, cmd.OutputFolder, partNum));
+                buffer.Clear();
+            }
+
+            // Single-file exports get a clean name without the _part01 suffix
+            if (partPaths.Count == 1)
+            {
+                var cleanPath = Path.Combine(cmd.OutputFolder, $"{cmd.FilePrefix}.xlsx");
+                File.Move(partPaths[0], cleanPath, overwrite: true);
+                partPaths[0] = cleanPath;
+            }
+
+            result.RowsTotal    = rowsFetched;
+            result.OutputFiles  = partPaths;
+            result.FilesCreated = partPaths.Count;
 
             sw.Stop();
             result.Success     = true;
             result.ElapsedTime = $"{(int)sw.Elapsed.TotalMinutes}m {sw.Elapsed.Seconds}s";
-            result.Message     = $"Exported {totalRows:N0} rows to {result.FilesCreated} file(s) in {result.ElapsedTime}.";
+            result.Message     = $"Exported {rowsFetched:N0} rows to {result.FilesCreated} file(s) in {result.ElapsedTime}.";
 
             var fileNames = result.OutputFiles.Select(f => Path.GetFileName(f) ?? f).ToList();
             await progressNotifier.NotifyAsync(cmd.JobId, new ProgressMessage
@@ -61,8 +88,8 @@ public class ExportDataUseCase(
                 Stage       = "Done",
                 Message     = result.Message,
                 Percent     = 100,
-                RowsDone    = totalRows,
-                RowsTotal   = totalRows,
+                RowsDone    = rowsFetched,
+                RowsTotal   = rowsFetched,
                 IsComplete  = true,
                 OutputFiles = fileNames,
             });
