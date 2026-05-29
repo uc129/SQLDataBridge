@@ -17,7 +17,8 @@
       "Bash(python3 -c ' *)",
       "Bash(node -e ' *)",
       "Bash(iconv -f UTF-16 -t UTF-8)",
-      "Bash(xargs grep -l \"ICrossServer\\\\|ICPVendor\\\\|IStepResult\\\\|VendorBasicRecord\\\\|IcpVendor\\\\|podata\\\\|m_Vendor\")"
+      "Bash(xargs grep -l \"ICrossServer\\\\|ICPVendor\\\\|IStepResult\\\\|VendorBasicRecord\\\\|IcpVendor\\\\|podata\\\\|m_Vendor\")",
+      "Bash(xargs grep -l \"ProcessState\\\\|TradePayableSettings\\\\|TradePayableDbContext\")"
     ]
   }
 }

@@ -1,12 +1,14 @@
 using DataBridge.Domain.TradePayable.Contracts;
 using DataBridge.Domain.TradePayable.Models;
+using System.Text.Json;
 
 namespace DataBridge.Application.TradePayable.UseCases;
 
 public class PipelineState
 {
-    public required PipelineRun         Run            { get; set; }
-    public required IReadOnlyList<int>  CompletedSteps { get; set; }
+    public required PipelineRun                                       Run            { get; set; }
+    public required IReadOnlyList<int>                                CompletedSteps { get; set; }
+    public Dictionary<string, Dictionary<string, string>>?            StepStats      { get; set; }
 }
 
 public class GetPipelineStateUseCase(IPipelineRunRepository pipelineRunRepo)
@@ -19,10 +21,18 @@ public class GetPipelineStateUseCase(IPipelineRunRepository pipelineRunRepo)
         var run = await pipelineRunRepo.GetByRunIdAsync(runId);
         if (run is null) return null;
 
+        Dictionary<string, Dictionary<string, string>>? stepStats = null;
+        if (!string.IsNullOrWhiteSpace(run.StepStatsJson))
+        {
+            try { stepStats = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, string>>>(run.StepStatsJson); }
+            catch { /* ignore malformed JSON */ }
+        }
+
         return new PipelineState
         {
             Run            = run,
             CompletedSteps = DeriveCompletedSteps(run.CurrentStepIndex),
+            StepStats      = stepStats,
         };
     }
 

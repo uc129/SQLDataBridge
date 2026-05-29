@@ -10,4 +10,5 @@ public class PipelineRun
     public string? StartedBy { get; set; }
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    public string? StepStatsJson { get; set; }
 }

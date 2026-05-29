@@ -195,6 +195,37 @@ internal sealed class StepResultRepository(
         foreach (DataColumn col in data.Columns)
             bulk.ColumnMappings.Add(col.ColumnName, col.ColumnName);
 
-        await bulk.WriteToServerAsync(data);
+        await bulk.WriteToServerAsync(NormalizeForNVarchar(data));
+    }
+
+    // All destination columns are NVARCHAR(MAX). SqlBulkCopy cannot implicitly convert
+    // non-string CLR types (Guid, bool, DateTime, decimal, int, …) to nvarchar,
+    // so we convert every non-string column to string before inserting.
+    private static DataTable NormalizeForNVarchar(DataTable source)
+    {
+        var columnsToConvert = source.Columns.Cast<DataColumn>()
+            .Where(c => c.DataType != typeof(string))
+            .Select(c => c.ColumnName)
+            .ToList();
+
+        if (columnsToConvert.Count == 0) return source;
+
+        var copy = source.Copy();
+        foreach (var colName in columnsToConvert)
+        {
+            var oldCol = copy.Columns[colName]!;
+            int ordinal = oldCol.Ordinal;
+            var tempName = colName + "__tmp";
+
+            copy.Columns.Add(tempName, typeof(string));
+            foreach (DataRow row in copy.Rows)
+                row[tempName] = row[colName] == DBNull.Value ? DBNull.Value : (object)row[colName].ToString()!;
+
+            copy.Columns.Remove(colName);
+            copy.Columns[tempName]!.ColumnName = colName;
+            copy.Columns[colName]!.SetOrdinal(ordinal);
+        }
+
+        return copy;
     }
 }

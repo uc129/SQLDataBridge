@@ -6,4 +6,5 @@ public interface IFAGLL03StagingRepository
 {
     Task BulkInsertAsync(IEnumerable<FAGLL03RAWEntity> rows, Guid runId);
     Task<IEnumerable<FAGLL03RAWEntity>> GetByRunIdAsync(Guid runId);
+    Task DeleteByRunIdAsync(Guid runId);
 }

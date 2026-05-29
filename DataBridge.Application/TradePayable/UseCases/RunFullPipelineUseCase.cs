@@ -1,20 +1,23 @@
 using DataBridge.Application.Interfaces;
+using DataBridge.Application.TradePayable.Processing;
 using DataBridge.Application.TradePayable.Services;
 using DataBridge.Application.TradePayable.UseCases.Commands;
 using DataBridge.Domain.Models;
 using DataBridge.Domain.TradePayable.Contracts;
 using DataBridge.Domain.TradePayable.Models;
 using System.Data;
+using System.Diagnostics;
 
 namespace DataBridge.Application.TradePayable.UseCases;
 
 public class RunFullPipelineUseCase(
-    IDataProcessingService dataProcessingService,
-    IPipelineRunRepository pipelineRunRepo,
-    IStepResultRepository  stepResultRepo,
-    IExcelWriter           excelWriter,
-    IProgressNotifier      progressNotifier,
-    IJobRegistry           jobRegistry)
+    IDataProcessingService  dataProcessingService,
+    IPipelineRunRepository  pipelineRunRepo,
+    IStepResultRepository   stepResultRepo,
+    IExcelWriter            excelWriter,
+    IProgressNotifier       progressNotifier,
+    IJobRegistry            jobRegistry,
+    IProcessSummaryRepository summaryRepo)
 {
     // Registered step class indices — used only for progress percentage math.
     private static readonly int[] RegisteredSteps = [0, 1, 2, 3, 6, 7, 10, 11, 12, 13];
@@ -38,19 +41,32 @@ public class RunFullPipelineUseCase(
                 ProcessStartTime = DateTime.UtcNow,
             };
 
-            // If the pipeline previously completed Step02, load that checkpoint so we
-            // don't re-read from the staging table or re-run Steps 0-2.
-            if (run.CurrentStepIndex >= 2)
+            // Resume from the highest available checkpoint in the DB.
+            int lastRegistered = RegisteredSteps[^1];
+            foreach (var (setTo, slots) in RunPipelineStepUseCase.CheckpointTiers)
             {
-                var checkpoint = await stepResultRepo.RetrieveStepResultAsync(run.RunId, 2);
-                if (checkpoint.Rows.Count > 0)
+                if (lastRegistered <= setTo) continue;
+                if (run.CurrentStepIndex < setTo) continue;
+
+                var loaded    = new Dictionary<int, DataTable>(slots.Length);
+                bool allFound = true;
+                foreach (var slot in slots)
                 {
-                    state.StepData[2]    = checkpoint;
-                    state.CurrentStepIndex = 2;
+                    var dt = await stepResultRepo.RetrieveStepResultAsync(run.RunId, slot);
+                    if (dt.Rows.Count == 0) { allFound = false; break; }
+                    loaded[slot] = dt;
                 }
+                if (!allFound) continue;
+
+                foreach (var (slot, dt) in loaded)
+                    state.StepData[slot] = dt;
+                state.CurrentStepIndex = setTo;
+                break;
             }
 
-            int totalSteps = RegisteredSteps.Length;
+            int    totalSteps    = RegisteredSteps.Length;
+            string? accStatsJson = run.StepStatsJson;
+            var    totalSw       = Stopwatch.StartNew();
 
             for (int i = 0; i < RegisteredSteps.Length; i++)
             {
@@ -70,12 +86,25 @@ public class RunFullPipelineUseCase(
                     RowsTotal = totalSteps,
                 });
 
+                var stepSw = Stopwatch.StartNew();
                 state = await dataProcessingService.RunStepsUpTo(targetStep, state);
+                stepSw.Stop();
+
                 await pipelineRunRepo.UpdateStepIndexAsync(cmd.RunId, state.CurrentStepIndex);
+
+                accStatsJson = StepStatsComputer.MergeStepStats(accStatsJson, state.CurrentStepIndex, state, stepSw.Elapsed);
             }
 
+            totalSw.Stop();
+            accStatsJson = StepStatsComputer.SetPipelineRuntime(accStatsJson, totalSw.Elapsed);
+
             state.ProcessEndTime = DateTime.UtcNow;
+
+            if (state.Summary is { } completedSummary)
+                await summaryRepo.UpsertAsync(cmd.RunId, run.QuarterDate, completedSummary);
+
             await pipelineRunRepo.UpdateStatusAsync(cmd.RunId, PipelineRunStatus.Completed);
+            await pipelineRunRepo.UpdateStepStatsAsync(cmd.RunId, accStatsJson ?? string.Empty);
 
             // Write the final processed result to a temp Excel so it is downloadable.
             WriteResultExcel(state, cmd.RunId);

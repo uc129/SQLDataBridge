@@ -111,8 +111,7 @@
           displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                      .Take(2).Select(w => char.ToUpper(w[0])));
       var isAdmin     = role == "Admin";
-      var authMethod  = _user?.FindFirstValue("DataBridgeAuthMethod") ?? "";
-      var signOutUrl  = authMethod == "Proxy" ? "/ProxySignOut" : "/MicrosoftIdentity/Account/SignOut";
+      var signOutUrl  = "/Logout";
   }
   <aside class="sidebar">
     <div class="sb-brand">

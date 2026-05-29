@@ -15,12 +15,15 @@ public class DownloadStepReportUseCase(
     ///   2. The DB step result (Step02 checkpoint, or results from pre-migration runs).
     /// Throws if neither source has data.
     /// </summary>
-    public async Task<string> ExecuteAsync(Guid runId, int stepIndex)
+    public async Task<string> ExecuteAsync(Guid runId, int stepIndex, bool force = false)
     {
         // 1. Check for an already-written temp Excel (fastest path, covers all steps).
-        var tempPath = TempExcelPath(runId, stepIndex);
-        if (File.Exists(tempPath))
-            return tempPath;
+        if (!force)
+        {
+            var tempPath = TempExcelPath(runId, stepIndex);
+            if (File.Exists(tempPath))
+                return tempPath;
+        }
 
         // 2. Fall back to DB (Step02 checkpoint, or older runs where all steps were persisted).
         var dt = await stepResultRepo.RetrieveStepResultAsync(runId, stepIndex);

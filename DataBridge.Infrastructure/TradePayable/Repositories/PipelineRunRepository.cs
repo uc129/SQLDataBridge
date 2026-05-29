@@ -8,11 +8,13 @@ internal sealed class PipelineRunRepository(TradePayableDbContext db) : IPipelin
 {
     public async Task CreateAsync(PipelineRun run)
     {
+        await EnsureStepStatsColumnAsync();
+
         const string sql = """
             INSERT INTO TP_PipelineRun
-                (RunId, QuarterDate, RevisionNumber, CurrentStepIndex, Status, StartedBy, StartedAt)
+                (RunId, QuarterDate, RevisionNumber, CurrentStepIndex, Status, StartedBy, StartedAt, StepStatsJson)
             VALUES
-                (@RunId, @QuarterDate, @RevisionNumber, @CurrentStepIndex, @Status, @StartedBy, @StartedAt)
+                (@RunId, @QuarterDate, @RevisionNumber, @CurrentStepIndex, @Status, @StartedBy, @StartedAt, @StepStatsJson)
             """;
 
         await using var conn = db.OpenDefault();
@@ -26,6 +28,7 @@ internal sealed class PipelineRunRepository(TradePayableDbContext db) : IPipelin
             Status = run.Status.ToString(),
             run.StartedBy,
             run.StartedAt,
+            run.StepStatsJson,
         });
     }
 
@@ -72,6 +75,35 @@ internal sealed class PipelineRunRepository(TradePayableDbContext db) : IPipelin
         await conn.ExecuteAsync(sql, new { runId, status = status.ToString(), completedAt });
     }
 
+    public async Task<PipelineRun?> GetByRevisionAsync(DateTime quarterDate, string revisionNumber)
+    {
+        const string sql = """
+            SELECT TOP 1 * FROM TP_PipelineRun
+            WHERE QuarterDate = @quarterDate AND RevisionNumber = @revisionNumber
+            ORDER BY StartedAt DESC
+            """;
+        await using var conn = db.OpenDefault();
+        await conn.OpenAsync();
+        var row = await conn.QuerySingleOrDefaultAsync<dynamic>(sql, new { quarterDate, revisionNumber });
+        return row is null ? null : MapRow(row);
+    }
+
+    public async Task DeleteAsync(Guid runId)
+    {
+        const string sql = "DELETE FROM TP_PipelineRun WHERE RunId = @runId";
+        await using var conn = db.OpenDefault();
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(sql, new { runId });
+    }
+
+    public async Task UpdateStepStatsAsync(Guid runId, string statsJson)
+    {
+        const string sql = "UPDATE TP_PipelineRun SET StepStatsJson = @statsJson WHERE RunId = @runId";
+        await using var conn = db.OpenDefault();
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(sql, new { runId, statsJson });
+    }
+
     private static PipelineRun MapRow(dynamic r) => new()
     {
         RunId            = r.RunId,
@@ -82,5 +114,21 @@ internal sealed class PipelineRunRepository(TradePayableDbContext db) : IPipelin
         StartedBy        = r.StartedBy,
         StartedAt        = r.StartedAt,
         CompletedAt      = r.CompletedAt,
+        StepStatsJson    = r.StepStatsJson,
     };
+
+    private async Task EnsureStepStatsColumnAsync()
+    {
+        const string ddl = """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE Name = 'StepStatsJson'
+                  AND Object_ID = Object_ID('TP_PipelineRun')
+            )
+                ALTER TABLE TP_PipelineRun ADD StepStatsJson NVARCHAR(MAX) NULL;
+            """;
+        await using var conn = db.OpenDefault();
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(ddl);
+    }
 }

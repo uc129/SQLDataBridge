@@ -36,6 +36,14 @@ internal sealed class FAGLL03StagingRepository(TradePayableDbContext db) : IFAGL
         return await conn.QueryAsync<FAGLL03RAWEntity>(sql, new { runId });
     }
 
+    public async Task DeleteByRunIdAsync(Guid runId)
+    {
+        const string sql = "DELETE FROM TP_FAGLL03_Raw WHERE RunId = @runId";
+        await using var conn = db.OpenDefault();
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(sql, new { runId });
+    }
+
     private static DataTable BuildDataTable(IEnumerable<FAGLL03RAWEntity> rows, Guid runId)
     {
         var dt = new DataTable();

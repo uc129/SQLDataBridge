@@ -29,6 +29,7 @@ internal static class DependencyInjectionTradePayable
         services.AddScoped<ICrossServerVendorRepository, CrossServerVendorRepository>();
         services.AddScoped<IMergedDataService,           MergedDataService>();
         services.AddScoped<IGLHyperionMapRepository,     GLHyperionMapRepository>();
+        services.AddScoped<IProcessSummaryRepository,    ProcessSummaryRepository>();
 
         services.AddScoped<ISPStorageService, SPStorageService>();
 

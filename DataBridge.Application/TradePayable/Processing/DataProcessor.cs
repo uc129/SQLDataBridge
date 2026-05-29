@@ -388,7 +388,7 @@ public class DataProcessor(HelperFunctions helper)
             var vendor = row.Table.Columns.Contains("Vendor") ? row.Field<string?>("Vendor") : null;
             var cc = row.Table.Columns.Contains("Company_Code") ? row.Field<string?>("Company_Code") : null;
             var icp = row.Table.Columns.Contains("ICP_Name") ? row.Field<string?>("ICP_Name") : null;
-            var reportDate = row.Table.Columns.Contains("Report_Date") ? row.Field<DateTime?>("Report_Date") : null;
+            DateTime? reportDate = row.Table.Columns.Contains("Report_Date") ? HelperFunctions.GetDate(row, "Report_Date") : null;
 
             row["Composite_Join_Key"] = $"{po}_{vendor}_{cc}_{icp}_{reportDate}";
         }

@@ -105,15 +105,14 @@ public class TradePayableController(
     // ── Download step result Excel ─────────────────────────────────────────────
 
     [HttpGet("download")]
-    public async Task<IActionResult> Download([FromQuery] Guid runId, [FromQuery] int step)
+    public async Task<IActionResult> Download(
+        [FromQuery] Guid runId, [FromQuery] int step, [FromQuery] bool force = false)
     {
         if (runId == Guid.Empty) return BadRequest("Missing runId.");
         try
         {
-            var filePath = await downloadUseCase.ExecuteAsync(runId, step);
+            var filePath = await downloadUseCase.ExecuteAsync(runId, step, force);
             var bytes    = await System.IO.File.ReadAllBytesAsync(filePath);
-            try { System.IO.File.Delete(filePath); } catch { /* best-effort */ }
-
             var fileName = Path.GetFileName(filePath);
             return File(bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

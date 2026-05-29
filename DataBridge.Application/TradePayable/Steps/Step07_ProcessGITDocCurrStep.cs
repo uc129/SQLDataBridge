@@ -29,13 +29,17 @@ public class Step07_ProcessGITDocCurrStep(
         state.StepData[9]  = results[2]; // modifiedOriginal
         state.StepData[71] = results[3]; // allGrouped
 
-        var snapshot = state.StepData[7].Copy();
-        var runId    = state.RunId;
-        _ = Task.Run(async () =>
+        var runId = state.RunId;
+        foreach (var (slotIdx, table) in new[] { (7, results[0]), (8, results[1]), (9, results[2]), (71, results[3]) })
         {
-            try { await stepRepo.SaveAndReplaceStepResultAsync(snapshot, runId, StepIndex); }
-            catch { /* best-effort */ }
-        });
+            var snap = table.Copy();
+            var si   = slotIdx;
+            _ = Task.Run(async () =>
+            {
+                try { await stepRepo.SaveAndReplaceStepResultAsync(snap, runId, si); }
+                catch { }
+            });
+        }
 
         return state;
     }

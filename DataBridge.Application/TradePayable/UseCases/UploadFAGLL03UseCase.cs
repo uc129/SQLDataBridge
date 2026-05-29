@@ -1,4 +1,5 @@
 using DataBridge.Application.Interfaces;
+using DataBridge.Application.TradePayable.Processing;
 using DataBridge.Application.TradePayable.UseCases.Commands;
 using DataBridge.Domain.Models;
 using DataBridge.Domain.TradePayable.Aggregates;
@@ -55,6 +56,15 @@ public class UploadFAGLL03UseCase(
             await progressNotifier.NotifyAsync(cmd.JobId, Notify("Parsing",
                 $"Parsed {dt.Rows.Count:N0} rows across {fileCount} file(s). Creating pipeline run…", 40));
 
+            var existing = await pipelineRunRepo.GetByRevisionAsync(cmd.QuarterDate, cmd.RevisionNumber);
+            if (existing is not null)
+            {
+                await progressNotifier.NotifyAsync(cmd.JobId, Notify("Uploading",
+                    $"Replacing existing data for revision {cmd.RevisionNumber}…", 50));
+                await stagingRepo.DeleteByRunIdAsync(existing.RunId);
+                await pipelineRunRepo.DeleteAsync(existing.RunId);
+            }
+
             var quarterEnd = Processing.HelperFunctions.GetLastDayOfQuarter(cmd.QuarterDate);
             var runId = Guid.NewGuid();
             var run = new PipelineRun
@@ -73,6 +83,9 @@ public class UploadFAGLL03UseCase(
 
             var entities = ConvertToEntities(dt, runId, cmd.QuarterDate, quarterEnd, cmd.RevisionNumber);
             await stagingRepo.BulkInsertAsync(entities, runId);
+
+            var uploadStats = StepStatsComputer.SetUploadStats(null, dt.Rows.Count, entities.Count);
+            await pipelineRunRepo.UpdateStepStatsAsync(runId, uploadStats);
 
             memoryStore.Store(runId, entities);
 

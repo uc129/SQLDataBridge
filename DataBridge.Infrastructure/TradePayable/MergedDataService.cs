@@ -28,7 +28,7 @@ internal sealed class MergedDataService(
 
         // ── Step 1 lookups (from podata) ─────────────────────────────────────────
         // PO_Vendor_Data: ebeln → {lifnr, vendor_name}
-        var byPO = podataRows
+        var byEbeln = podataRows
             .Where(r => r.Ebeln != null)
             .GroupBy(r => r.Ebeln!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key,
@@ -59,6 +59,13 @@ internal sealed class MergedDataService(
             .ToDictionary(g => g.Key, g => g.First(),
                           VendorKeyComparer.Instance);
 
+        // ── Reverse lookup: vendor_name → first vendor master row ───────────────
+        var vendorMasterByName = mVendRows
+            .Where(r => r.C_VendorName != null && r.PkcVendorCode != null)
+            .GroupBy(r => r.C_VendorName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(),
+                          StringComparer.OrdinalIgnoreCase);
+
         // ── Step 4 lookup: vendor_code → ICP entry ──────────────────────────────
         var icpByCode = icpRecords
             .Where(m => m.Vendor_Code != null)
@@ -88,7 +95,7 @@ internal sealed class MergedDataService(
             string? vOnlyLifnr = null, vOnlyName = null;
             string? nOnlyLifnr = null, nOnlyName = null;
 
-            if (hasPO && byPO.TryGetValue(po!, out var pm))
+            if (hasPO && byEbeln.TryGetValue(po!, out var pm))
             {
                 poMatchLifnr = pm.Lifnr;
                 poMatchName = pm.Name;
@@ -120,15 +127,45 @@ internal sealed class MergedDataService(
             string? mergedPO = NullIfNotFound(po);
             string? mergedVendor = poMatchLifnr ?? vOnlyLifnr ?? nOnlyLifnr ?? NullIfNotFound(vendor);
             // Merged_Vendor_Description: n_only first, then v_only, then po, then original
-            string? mergedVendDesc = NullIfNotFound(vendDesc ?? vOnlyName ?? nOnlyName ?? poMatchName);
+
+            List<string> vendorCheck = new List<string>()
+            {
+                "14701", "14702", "14002", "14001", "14021",
+                "14100", "14142", "14155", "14219", "14275",
+                "14393", "14477", "14503", "14507", "14550",
+                "14552", "14560", "14589", "14620", "14621",
+                "14622", "14624", "14677", "14684", "14703",
+                "14704", "14705", "14711", "14712", "14721",
+                "14753", "14777", "14779", "14794", "14810",
+                "14831", "14836", "14850", "14853", "14893",
+                "14898", "14982"
+            };
+
+            //if (mergedVendor != null && vendorCheck.Contains(mergedVendor))
+            //{
+            //    // Do something if the mergedVendor is in the vendorCheck list
+            //    System.Diagnostics.Debug.WriteLine($"Merged Vendor {mergedVendor} is in the vendor check list.");
+            //}
+
+            string? mergedVendDesc = NullIfNotFound(vOnlyName ?? vendDesc ?? nOnlyName ?? poMatchName);
 
             // ── Step 2: Vendor CP / Industry ────────────────────────────────────
+            // 2a: recover vendor code from master when vendor is null but description has a value
+            if (mergedVendor == null && !string.IsNullOrWhiteSpace(mergedVendDesc)
+                && vendorMasterByName.TryGetValue(mergedVendDesc!, out var vmByName))
+            {
+                mergedVendor = vmByName.PkcVendorCode;
+            }
+
             string? zterm = null, industryType = null;
             if (mergedVendor != null && company != null
                 && vendorMaster.TryGetValue((mergedVendor, company), out var vm))
             {
                 zterm = vm.Zterm;
                 industryType = vm.IndustryType;
+                // 2b: fill description from master if still blank
+                if (string.IsNullOrWhiteSpace(mergedVendDesc))
+                    mergedVendDesc = vm.C_VendorName;
             }
 
             string? mergedCP = TryCastMod100(payTerms) ?? TryCastMod100(zterm);
@@ -186,7 +223,7 @@ internal sealed class MergedDataService(
             row["ICP_Name"] = Str(icp?.ICP_Name);
             row["Entity_Type"] = Str(icp?.Entity_Type);
             row["Entity_Relation"] = Str(icp?.Entity_Relation);
-            row["IsSNACompany"] = isSNA;
+            row["IsSNACompany"] = isSNA ? "True" : "False";
             result.Rows.Add(row);
         }
 
@@ -219,6 +256,7 @@ internal sealed class MergedDataService(
         const string sql = """
             SELECT [pkc_vendor_code]  AS PkcVendorCode,
                    [pkc_company_code] AS PkcCompanyCode,
+                   [c_vendor_name]    AS C_VendorName,
                    [ZTERM]            AS Zterm,
                    [industry_type]    AS IndustryType
             FROM [Lnt_PO_Data].[dbo].[m_Vendor]
@@ -247,8 +285,7 @@ internal sealed class MergedDataService(
         ];
         foreach (var col in strCols)
             dt.Columns.Add(col, typeof(string));
-        // GITHelper reads IsSNACompany via Field<bool?> — must be bool column.
-        dt.Columns.Add("IsSNACompany", typeof(bool));
+        dt.Columns.Add("IsSNACompany", typeof(string));
         return dt;
     }
 
@@ -298,21 +335,21 @@ internal sealed class MergedDataService(
         public string? RevisionNumber { get; set; }
         public string? QuarterEndDate { get; set; }
     }
-
     private sealed class PoDataRow
     {
         public string? Ebeln { get; set; }
         public string? Lifnr { get; set; }
         public string? Name1 { get; set; }
     }
-
     private sealed class VendorMasterRow
     {
         public string? PkcVendorCode { get; set; }
         public string? PkcCompanyCode { get; set; }
+        public string? C_VendorName { get; set; }
         public string? Zterm { get; set; }
         public string? IndustryType { get; set; }
     }
+
 
     // Comparer for (string, string) tuple keys — case-insensitive on both parts.
     private sealed class VendorKeyComparer : IEqualityComparer<(string, string)>

@@ -10,8 +10,8 @@ namespace DataBridge.Application.TradePayable.Steps;
 /// Asynchronously persists slot 3 (advance calculation result) to TP_Step_03.
 /// </summary>
 public class Step03_ProcessGITLocalStep(
-    GITProcessor          gitProcessor,
-    HelperFunctions       helper,
+    GITProcessor gitProcessor,
+    HelperFunctions helper,
     IStepResultRepository stepRepo) : IProcessStep
 {
     public int StepIndex => 3;
@@ -24,20 +24,24 @@ public class Step03_ProcessGITLocalStep(
 
         var results = gitProcessor.ProcessFAGLL03GITData(state.StepData[2]);
 
-        state.StepData[3]  = results[0]; // processedGIT
-        state.StepData[4]  = results[1]; // netLiability
-        state.StepData[5]  = results[2]; // modifiedOriginal
+        state.StepData[3] = results[0]; // processedGIT
+        state.StepData[4] = results[1]; // netLiability
+        state.StepData[5] = results[2]; // modifiedOriginal
         state.StepData[31] = results[3]; // allGrouped
 
         state.StepData.Remove(2);
 
-        var snapshot = state.StepData[3].Copy();
-        var runId    = state.RunId;
-        _ = Task.Run(async () =>
+        var runId = state.RunId;
+        foreach (var (slotIdx, table) in new[] { (3, results[0]), (4, results[1]), (5, results[2]), (31, results[3]) })
         {
-            try { await stepRepo.SaveAndReplaceStepResultAsync(snapshot, runId, StepIndex); }
-            catch { /* best-effort */ }
-        });
+            var snap = table.Copy();
+            var si   = slotIdx;
+            _ = Task.Run(async () =>
+            {
+                try { await stepRepo.SaveAndReplaceStepResultAsync(snap, runId, si); }
+                catch { }
+            });
+        }
 
         return state;
     }

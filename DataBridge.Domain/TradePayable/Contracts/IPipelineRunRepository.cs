@@ -9,4 +9,7 @@ public interface IPipelineRunRepository
     Task<IEnumerable<PipelineRun>> GetAllAsync();
     Task UpdateStepIndexAsync(Guid runId, int stepIndex);
     Task UpdateStatusAsync(Guid runId, PipelineRunStatus status);
+    Task<PipelineRun?> GetByRevisionAsync(DateTime quarterDate, string revisionNumber);
+    Task DeleteAsync(Guid runId);
+    Task UpdateStepStatsAsync(Guid runId, string statsJson);
 }

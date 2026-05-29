@@ -1,10 +1,12 @@
 using DataBridge.Application.Interfaces;
+using DataBridge.Application.TradePayable.Processing;
 using DataBridge.Application.TradePayable.Services;
 using DataBridge.Application.TradePayable.UseCases.Commands;
 using DataBridge.Domain.Models;
 using DataBridge.Domain.TradePayable.Contracts;
 using DataBridge.Domain.TradePayable.Models;
 using System.Data;
+using System.Diagnostics;
 
 namespace DataBridge.Application.TradePayable.UseCases;
 
@@ -16,7 +18,8 @@ public class RunPipelineStepUseCase(
     IFAGLL03StagingRepository stagingRepo,
     IExcelWriter            excelWriter,
     IProgressNotifier       progressNotifier,
-    IJobRegistry            jobRegistry)
+    IJobRegistry            jobRegistry,
+    IProcessSummaryRepository summaryRepo)
 {
     public async Task ExecuteAsync(RunPipelineStepCommand cmd)
     {
@@ -32,11 +35,25 @@ public class RunPipelineStepUseCase(
 
             ct.ThrowIfCancellationRequested();
 
+            using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var heartbeat = SimulateProgressAsync(cmd.JobId, cmd.TargetStepIndex, heartbeatCts.Token);
+
+            var sw    = Stopwatch.StartNew();
             var state = await BootstrapStateAsync(run, cmd.TargetStepIndex);
             state = await dataProcessingService.RunStepsUpTo(cmd.TargetStepIndex, state);
+            sw.Stop();
+
+            if (state.CurrentStepIndex == 13 && state.Summary is { } stepSummary)
+                await summaryRepo.UpsertAsync(cmd.RunId, run.QuarterDate, stepSummary);
+
+            await heartbeatCts.CancelAsync();
+            try { await heartbeat; } catch (OperationCanceledException) { }
 
             await pipelineRunRepo.UpdateStepIndexAsync(cmd.RunId, state.CurrentStepIndex);
             await pipelineRunRepo.UpdateStatusAsync(cmd.RunId, PipelineRunStatus.StepComplete);
+
+            var statsJson = StepStatsComputer.MergeStepStats(run.StepStatsJson, state.CurrentStepIndex, state, sw.Elapsed);
+            await pipelineRunRepo.UpdateStepStatsAsync(cmd.RunId, statsJson);
 
             var writtenFiles = WriteStepExcels(state, cmd.RunId);
             var fileNames    = writtenFiles.Count > 0
@@ -69,11 +86,6 @@ public class RunPipelineStepUseCase(
         }
     }
 
-    /// <summary>
-    /// Populates ProcessState.StepData with the appropriate starting point:
-    /// - If target ≤ 2 or no checkpoint exists → load raw entities (from memory store or DB) and start from Step00.
-    /// - If target > 2 and checkpoint exists → load Step02 result from DB and skip Steps 0-2.
-    /// </summary>
     private async Task<ProcessState> BootstrapStateAsync(PipelineRun run, int targetStep)
     {
         var state = new ProcessState
@@ -85,18 +97,27 @@ public class RunPipelineStepUseCase(
             ProcessStartTime = DateTime.UtcNow,
         };
 
-        if (targetStep > 2)
+        foreach (var (setTo, slots) in CheckpointTiers)
         {
-            var checkpoint = await stepResultRepo.RetrieveStepResultAsync(run.RunId, 2);
-            if (checkpoint.Rows.Count > 0)
+            if (targetStep <= setTo) continue;
+
+            var loaded   = new Dictionary<int, DataTable>(slots.Length);
+            bool allFound = true;
+            foreach (var slot in slots)
             {
-                state.StepData[2]      = checkpoint;
-                state.CurrentStepIndex = 2;
-                return state;
+                var dt = await stepResultRepo.RetrieveStepResultAsync(run.RunId, slot);
+                if (dt.Rows.Count == 0) { allFound = false; break; }
+                loaded[slot] = dt;
             }
+            if (!allFound) continue;
+
+            foreach (var (slot, dt) in loaded)
+                state.StepData[slot] = dt;
+            state.CurrentStepIndex = setTo;
+            return state;
         }
 
-        // No checkpoint, or target is within the pre-checkpoint region: ensure raw entities are in store.
+        // No checkpoint available — load raw entities and start from Step 0.
         if (memoryStore.Get(run.RunId) is null)
         {
             var rows = await stagingRepo.GetByRunIdAsync(run.RunId);
@@ -113,6 +134,19 @@ public class RunPipelineStepUseCase(
         [3] = [3, 4, 5, 31],
         [7] = [7, 8, 9, 71],
     };
+
+    // Checkpoint tiers ordered from most-advanced to least-advanced.
+    // Each tier: (CurrentStepIndex to set, DB slots that must all be non-empty).
+    internal static readonly (int StepIndexToSet, int[] SlotsToLoad)[] CheckpointTiers =
+    [
+        (12, [12]),
+        (11, [11]),
+        (10, [6, 10]),
+        ( 9, [6, 8, 9]),
+        ( 6, [6]),
+        ( 5, [4, 5]),
+        ( 2, [2]),
+    ];
 
     /// <summary>
     /// Writes all output slots for the completed step to a temp folder keyed by runId
@@ -150,6 +184,21 @@ public class RunPipelineStepUseCase(
         }
 
         return written;
+    }
+
+    private async Task SimulateProgressAsync(string jobId, int stepIndex, CancellationToken ct)
+    {
+        var rng = new Random();
+        int pct = 10;
+        while (!ct.IsCancellationRequested && pct < 85)
+        {
+            try { await Task.Delay(rng.Next(2000, 5000), ct); }
+            catch (OperationCanceledException) { break; }
+
+            pct = Math.Min(85, pct + rng.Next(5, 16));
+            await progressNotifier.NotifyAsync(jobId,
+                Notify("Running", $"Processing step {stepIndex}…", pct));
+        }
     }
 
     private static ProgressMessage Notify(string stage, string message, int percent, bool isError = false) =>

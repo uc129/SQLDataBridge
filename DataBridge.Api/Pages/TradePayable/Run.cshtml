@@ -146,6 +146,10 @@
           <div><div class="k">Revision</div><div class="v mono" id="ri-revision">—</div></div>
           <div><div class="k">Status</div><div class="v" id="ri-status">—</div></div>
         </div>
+        <div id="stepAnalytics" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);letter-spacing:.04em;margin-bottom:8px;text-transform:uppercase">Step Analytics</div>
+          <div id="stepAnalyticsList" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
       </div>
 
     </div>
@@ -154,6 +158,10 @@
 </div>
 
 @section Scripts {
+<style>
+  .spin { display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:dl-spin .6s linear infinite;vertical-align:middle; }
+  @@keyframes dl-spin { to { transform:rotate(360deg); } }
+</style>
 <script>
   // ═══════════════════════════════════════════════════════
   //  Step definitions (StepIndex → label + outputs)
@@ -176,6 +184,49 @@
     5:'Original+Keys', 6:'Net Liability Appended', 7:'GIT Doc Processed', 8:'Net Liability (DocCurr)',
     9:'Original+DocKeys', 10:'DocCurr Appended', 11:'Trade+SNA Merged', 12:'Final Result', 13:'Summary'
   };
+
+  // Step analytics — label for each stats key (order controls display order)
+  const ANALYTICS_ORDER = ['upload','1','2','3','6','7','10','11','12','13','pipeline'];
+  const ANALYTICS_LABELS = {
+    upload:   'Upload',
+    '1':      'Step 1 · Populate',
+    '2':      'Step 2 · Merge',
+    '3':      'Step 3 · GIT Local',
+    '6':      'Step 6 · Net Liability (Local)',
+    '7':      'Step 7 · GIT Doc Currency',
+    '10':     'Step 10 · Net Liability (DocCurr)',
+    '11':     'Step 11 · Merge Local+DocCurr',
+    '12':     'Step 12 · Final',
+    '13':     'Step 13 · Summary',
+    pipeline: 'Pipeline Total',
+  };
+
+  function renderStepAnalytics(stepStats) {
+    const section = document.getElementById('stepAnalytics');
+    const list    = document.getElementById('stepAnalyticsList');
+    if (!stepStats || Object.keys(stepStats).length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    list.innerHTML = ANALYTICS_ORDER
+      .filter(key => stepStats[key])
+      .map(key => {
+        const label  = ANALYTICS_LABELS[key] || key;
+        const kv     = stepStats[key];
+        const pills  = Object.entries(kv).map(([k, v]) =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;font-size:11px;white-space:nowrap">
+            <span style="color:var(--text-muted)">${k}</span>
+            <span style="font-weight:600;color:var(--text)">${v}</span>
+          </span>`
+        ).join('');
+        return `
+          <div style="padding:7px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:11.5px;font-weight:600;color:var(--text-muted);margin-bottom:5px">${label}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">${pills}</div>
+          </div>`;
+      }).join('');
+  }
 
   let runId          = null;
   let completedSteps = [];
@@ -276,6 +327,7 @@
       document.getElementById('ri-revision').textContent = run.revisionNumber;
       document.getElementById('ri-status').textContent   = run.status;
 
+      renderStepAnalytics(data.stepStats);
       renderStepList();
       renderDownloads();
     } catch (e) {
@@ -294,10 +346,10 @@
         ? '<svg width="14" height="14" style="color:var(--green-500)"><use href="#ic-check"/></svg>'
         : '<span style="width:16px;height:16px;border-radius:50%;border:2px solid var(--border);display:inline-block"></span>';
       const dls = done ? s.outputs.map(o => `
-        <a class="btn btn-ghost btn-sm" style="height:24px;padding:0 8px;font-size:11px"
-           href="/api/v1/tradepayable/download?runId=${runId}&step=${o}" download>
+        <button id="dl-btn-${o}" class="btn btn-ghost btn-sm"
+          style="height:24px;padding:0 8px;font-size:11px" onclick="triggerDownload(${o})">
           <svg width="11" height="11"><use href="#ic-download"/></svg> Step ${o}
-        </a>`).join('') : '';
+        </button>`).join('') : '';
       return `
         <div style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:8px;background:${done?'var(--surface-2)':'var(--surface)'}">
           ${icon}
@@ -318,10 +370,18 @@
     card.style.display = '';
     list.innerHTML = dlSteps.sort((a,b)=>a-b).map(s => {
       const name = STEP_NAMES[s] || ('Step ' + s);
-      return `<a class="btn btn-ghost btn-sm"
-                 href="/api/v1/tradepayable/download?runId=${runId}&step=${s}" download>
-                <svg width="12" height="12"><use href="#ic-download"/></svg> ${name}
-              </a>`;
+      return `
+        <div style="display:flex;align-items:center;gap:4px">
+          <button id="dl-btn-${s}" class="btn btn-ghost btn-sm" style="flex:1;justify-content:flex-start"
+            onclick="triggerDownload(${s})">
+            <svg width="12" height="12"><use href="#ic-download"/></svg> ${name}
+          </button>
+          <button id="dl-btn-${s}-regen" class="btn btn-ghost btn-sm"
+            style="width:28px;padding:0;flex-shrink:0" title="Force regenerate from database"
+            onclick="triggerDownload(${s}, true)">
+            <svg width="12" height="12"><use href="#ic-refresh"/></svg>
+          </button>
+        </div>`;
     }).join('');
   }
 
@@ -455,6 +515,36 @@
     document.getElementById('progressBar').className = 'progress-fill is-error';
     document.getElementById('statusBadge').className = 'badge badge-fail';
     document.getElementById('statusBadge').textContent = 'Error';
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Download with loader + optional force-regenerate
+  // ═══════════════════════════════════════════════════════
+  async function triggerDownload(step, force = false) {
+    const btnId = `dl-btn-${step}${force ? '-regen' : ''}`;
+    const btn   = document.getElementById(btnId);
+    const orig  = btn ? btn.innerHTML : null;
+    if (btn) btn.innerHTML = '<span class="spin"></span>';
+
+    try {
+      const url = `/api/v1/tradepayable/download?runId=${runId}&step=${step}${force ? '&force=true' : ''}`;
+      const res = await fetch(url);
+      if (!res.ok) { alert('Download failed: ' + await res.text()); return; }
+
+      const blob    = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a       = document.createElement('a');
+      const cd      = res.headers.get('Content-Disposition') || '';
+      const match   = cd.match(/filename="?([^"]+)"?/);
+      a.href        = blobUrl;
+      a.download    = match ? match[1] : `Step${String(step).padStart(2,'0')}_part01.xlsx`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      alert('Download error: ' + e.message);
+    } finally {
+      if (btn && orig) btn.innerHTML = orig;
+    }
   }
 
   function setBusy(busy) {
